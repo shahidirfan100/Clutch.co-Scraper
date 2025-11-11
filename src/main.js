@@ -234,50 +234,41 @@ async function main() {
 
         const findAgencyLinks = ($$, base) => {
             const links = new Set();
-            const addFromSelector = (selector, attr) => {
-                $$(selector).each((_, el) => {
-                    const raw = $$(el).attr(attr);
-                    if (!raw) return;
-                    let candidate = raw;
+            
+            // Primary selector: Find all profile links in the page
+            const profileLinks = $$('.provider-row a[href*="/profile/"], h3 a[href*="/profile/"], .provider-card a[href*="/profile/"], .directory-listing a[href*="/profile/"]');
+            profileLinks.each((_, el) => {
+                const href = $$(el).attr('href');
+                if (href) {
                     // Handle redirect URLs
+                    let candidate = href;
                     if (candidate.includes('r.clutch.co/redirect')) {
                         try {
                             const url = new URL(candidate);
                             const u = url.searchParams.get('u');
                             if (u) candidate = decodeURIComponent(u);
                         } catch {
-                            // Ignore URL parsing errors
+                            return; // Skip invalid URLs
                         }
                     }
-                    // Ensure profile URLs
-                    if (!candidate.includes('/profile/')) return;
-                    const abs = toAbs(candidate, base);
-                    if (abs) links.add(abs);
-                });
-            };
-            
-            // Primary selectors based on actual HTML structure
-            addFromSelector('a[href*="/profile/"]', 'href');
-            addFromSelector('a[data-profile-url]', 'data-profile-url');
-            
-            // Additional fallbacks
-            addFromSelector('h3 a[href*="/profile/"]', 'href');
-            addFromSelector('.provider-card a[href*="/profile/"]', 'href');
-            addFromSelector('.directory-listing a[href*="/profile/"]', 'href');
-            
-            // Also check for profile links in text content (markdown-style links)
-            $$.root().find('*').each((_, el) => {
-                const text = $$.text();
-                const matches = text.match(/\[([^\]]+)\]\(([^)]*\/profile\/[^)]*)\)/g);
-                if (matches) {
-                    matches.forEach(match => {
-                        const urlMatch = match.match(/\(([^)]*\/profile\/[^)]*)\)/);
-                        if (urlMatch) {
-                            const abs = toAbs(urlMatch[1], base);
-                            if (abs) links.add(abs);
-                        }
-                    });
+                    // Ensure it's a profile URL
+                    if (candidate.includes('/profile/')) {
+                        const abs = toAbs(candidate, base);
+                        if (abs) links.add(abs);
+                    }
                 }
+            });
+            
+            // Additional fallbacks for different HTML structures
+            $$('.provider-row, .provider-card, .directory-listing').each((_, container) => {
+                const containerLinks = $$(container).find('a[href]');
+                containerLinks.each((_, el) => {
+                    const href = $$(el).attr('href');
+                    if (href && href.includes('/profile/')) {
+                        const abs = toAbs(href, base);
+                        if (abs) links.add(abs);
+                    }
+                });
             });
             
             return [...links];
@@ -305,24 +296,38 @@ async function main() {
         };
 
         const findNextPageUrl = ($$, requestUrl, pageNo) => {
-            // First try to find explicit next link
-            const nextLink = $$('a[href*="page="]').filter((_, el) => {
-                const href = $$(el).attr('href');
-                return href && (/(next|›|»)/i.test($$(el).text()) || /(page=\d+)/.test(href));
-            }).first();
+            // Look for pagination links
+            const paginationSelectors = [
+                'a[rel="next"]',
+                'a.next',
+                'a[href*="page="]',
+                'a:contains("Next")',
+                'a:contains("›")',
+                'a:contains("»")',
+                '.pagination a[href]',
+                'a.page-link[href]'
+            ];
             
-            if (nextLink.length) {
-                const href = nextLink.attr('href');
-                const abs = toAbs(href, requestUrl);
-                if (abs) return abs;
-            }
-            
-            // Also check for "Go to Next Page" text
-            const nextText = $$('a').filter((_, el) => /(Go to Next Page|Next)/i.test($$(el).text())).first();
-            if (nextText.length) {
-                const href = nextText.attr('href');
-                const abs = toAbs(href, requestUrl);
-                if (abs) return abs;
+            for (const selector of paginationSelectors) {
+                const nextLink = $$(selector).filter((_, el) => {
+                    const href = $$(el).attr('href');
+                    if (!href) return false;
+                    
+                    // Check if it's a next page link
+                    const text = $$(el).text().toLowerCase();
+                    const isNext = /(next|›|»|\bpage\b)/.test(text) || 
+                                 href.includes(`page=${pageNo + 1}`) ||
+                                 href.includes('?page=') || 
+                                 href.includes('&page=');
+                    
+                    return isNext;
+                }).first();
+                
+                if (nextLink.length) {
+                    const href = nextLink.attr('href');
+                    const abs = toAbs(href, requestUrl);
+                    if (abs) return abs;
+                }
             }
             
             // Build fallback pagination URL
@@ -550,7 +555,10 @@ async function main() {
         });
 
         try {
+            console.log('pre-crawl', initial.length, initial);
+            log.info(`Scheduling ${initial.length} initial request(s) for ${initial.join(', ')}`);
             await crawler.run(initial.map(u => ({ url: u, userData: { label: 'LIST', pageNo: 1, referer: 'https://clutch.co' } })));
+            console.log('post-crawl reached');
             log.info(`Finished scraping. Total saved: ${saved} agencies`);
         } catch (err) {
             log.error(`Crawler failed: ${err.message}`);
