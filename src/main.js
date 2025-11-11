@@ -468,6 +468,72 @@ async function main() {
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
             maxRequestsPerCrawl: RESULTS_WANTED * 3,
+            maxRequestRetries: 5,
+            maxConcurrency: 2,
+            
+            // Add session pool for better stealth
+            useSessionPool: true,
+            sessionPoolOptions: {
+                maxPoolSize: 20,
+                sessionOptions: {
+                    maxUsageCount: 10,
+                    maxErrorScore: 3,
+                },
+            },
+            
+            // Configure request options for got-scraping
+            requestHandlerTimeoutSecs: 60,
+            
+            // Add pre-navigation hooks to set headers before request
+            preNavigationHooks: [
+                async ({ request, session }, requestAsBrowserOptions) => {
+                    // Generate realistic headers
+                    const generatedHeaders = headerGenerator.getHeaders({
+                        browsers: [{ name: 'chrome', minVersion: 119, maxVersion: 120 }],
+                        operatingSystems: ['windows'],
+                        devices: ['desktop'],
+                        locales: ['en-US'],
+                    });
+                    
+                    // Add random delay for human-like behavior
+                    const delay = Math.floor(Math.random() * 1500) + 500;
+                    await Actor.utils.sleep(delay);
+                    
+                    // Set comprehensive headers
+                    requestAsBrowserOptions.headers = {
+                        ...requestAsBrowserOptions.headers,
+                        'User-Agent': generatedHeaders['user-agent'],
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Sec-CH-UA': generatedHeaders['sec-ch-ua'] || '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+                        'Sec-CH-UA-Mobile': '?0',
+                        'Sec-CH-UA-Platform': '"Windows"',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Cache-Control': 'max-age=0',
+                        'Referer': request.userData?.referer || 'https://www.google.com/',
+                    };
+                    
+                    // Log for debugging
+                    log.info(`Pre-navigation hook applied headers for: ${request.url}`);
+                }
+            ],
+            
+            // Handle failed requests gracefully
+            failedRequestHandler: async ({ request }, error) => {
+                log.error(`Request failed for ${request.url}: ${error.message}`);
+                
+                // Log retry information
+                if (request.retryCount < 5) {
+                    log.info(`Will retry request (attempt ${request.retryCount + 1}/5)`);
+                } else {
+                    log.warning(`Max retries reached for ${request.url}, skipping...`);
+                }
+            },
             
             async requestHandler({ request, $, enqueueLinks, log: crawlerLog }) {
                 const label = request.userData?.label || 'LIST';
