@@ -234,29 +234,54 @@ async function main() {
 
         const findAgencyLinks = ($$, base) => {
             const links = new Set();
-            const addFromSelector = (selector, attr = 'href') => {
+            const addFromSelector = (selector, attr) => {
                 $$(selector).each((_, el) => {
                     const raw = $$(el).attr(attr);
-                    const abs = toAbs(raw, base);
+                    if (!raw) return;
+                    let candidate = raw;
+                    // Handle redirect URLs
+                    if (candidate.includes('r.clutch.co/redirect')) {
+                        try {
+                            const url = new URL(candidate);
+                            const u = url.searchParams.get('u');
+                            if (u) candidate = decodeURIComponent(u);
+                        } catch {
+                            // Ignore URL parsing errors
+                        }
+                    }
+                    // Ensure profile URLs
+                    if (!candidate.includes('/profile/')) return;
+                    const abs = toAbs(candidate, base);
                     if (abs) links.add(abs);
                 });
             };
-            addFromSelector('a[data-profile-url]', 'data-profile-url');
+            
+            // Primary selectors based on actual HTML structure
             addFromSelector('a[href*="/profile/"]', 'href');
-            addFromSelector('a[href*="/profile"]', 'href');
-            addFromSelector('div.provider-row a[href]', 'href');
-            addFromSelector('.provider-card a[href]', 'href');
-            $$('.directory-listing a[href]').each((_, el) => {
-                const href = $$(el).attr('href');
-                if (href && /\/profile\//i.test(href)) {
-                    const abs = toAbs(href, base);
-                    if (abs) links.add(abs);
+            addFromSelector('a[data-profile-url]', 'data-profile-url');
+            
+            // Additional fallbacks
+            addFromSelector('h3 a[href*="/profile/"]', 'href');
+            addFromSelector('.provider-card a[href*="/profile/"]', 'href');
+            addFromSelector('.directory-listing a[href*="/profile/"]', 'href');
+            
+            // Also check for profile links in text content (markdown-style links)
+            $$.root().find('*').each((_, el) => {
+                const text = $$.text();
+                const matches = text.match(/\[([^\]]+)\]\(([^)]*\/profile\/[^)]*)\)/g);
+                if (matches) {
+                    matches.forEach(match => {
+                        const urlMatch = match.match(/\(([^)]*\/profile\/[^)]*)\)/);
+                        if (urlMatch) {
+                            const abs = toAbs(urlMatch[1], base);
+                            if (abs) links.add(abs);
+                        }
+                    });
                 }
             });
+            
             return [...links];
-        };
-
-        const filterNewLinks = (links, seenSet, limit) => {
+        };        const filterNewLinks = (links, seenSet, limit) => {
             const unique = [];
             for (const link of links) {
                 if (limit && unique.length >= limit) break;
@@ -280,43 +305,45 @@ async function main() {
         };
 
         const findNextPageUrl = ($$, requestUrl, pageNo) => {
-            const selectors = [
-                'link[rel="next"]',
-                'a.pagination__next',
-                'a[aria-label*="Next"]',
-                'a.btn-next',
-                'a:contains("Next")',
-                'a:contains("›")',
-                'a:contains("»")',
-            ];
-            for (const selector of selectors) {
-                const match = $$(selector).filter((_, el) => $$(el).attr('href')).first();
-                if (match.length) {
-                    const href = match.attr('href');
-                    const abs = toAbs(href, requestUrl);
-                    if (abs) return abs;
-                }
+            // First try to find explicit next link
+            const nextLink = $$('a[href*="page="]').filter((_, el) => {
+                const href = $$(el).attr('href');
+                return href && (/(next|›|»)/i.test($$(el).text()) || /(page=\d+)/.test(href));
+            }).first();
+            
+            if (nextLink.length) {
+                const href = nextLink.attr('href');
+                const abs = toAbs(href, requestUrl);
+                if (abs) return abs;
             }
+            
+            // Also check for "Go to Next Page" text
+            const nextText = $$('a').filter((_, el) => /(Go to Next Page|Next)/i.test($$(el).text())).first();
+            if (nextText.length) {
+                const href = nextText.attr('href');
+                const abs = toAbs(href, requestUrl);
+                if (abs) return abs;
+            }
+            
+            // Build fallback pagination URL
             return buildNextPageFallback(requestUrl, pageNo + 1);
         };
 
         const buildStartUrl = (cat, loc) => {
-            const trimmedCategory = String(cat || '').trim();
-            let path = '/directory/agencies';
-            if (trimmedCategory) {
-                if (trimmedCategory.startsWith('/directory/')) {
-                    path = trimmedCategory;
-                } else {
-                    const slug = encodeURI(trimmedCategory.replace(/\s+/g, '-').toLowerCase());
-                    path = `/directory/${slug}`;
-                }
+            // Clutch.co uses /agencies for listing all agencies
+            // Categories and location filters are handled via query parameters
+            const baseUrl = 'https://clutch.co/agencies';
+            const u = new URL(baseUrl);
+            
+            // Add location filter if provided
+            if (loc && String(loc).trim()) {
+                u.searchParams.set('location', String(loc).trim());
             }
-            const start = new URL(`https://clutch.co${path}`);
-            if (loc) start.searchParams.set('search', String(loc).trim());
-            return start.href;
-        };
-
-        const initial = [];
+            
+            // For categories, we'll rely on the default advertising category
+            // or let users specify via startUrl
+            return u.href;
+        };        const initial = [];
         if (Array.isArray(startUrls) && startUrls.length) initial.push(...startUrls);
         if (startUrl) initial.push(startUrl);
         if (url) initial.push(url);
