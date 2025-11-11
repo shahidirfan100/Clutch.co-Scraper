@@ -1,0 +1,53 @@
+{
+  "actorSpecification": 1,
+  "fields": {},
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": [
+          "name",
+          "rating",
+          "location",
+          "min_budget",
+          "hourly_rate",
+          "company_size",
+          "url"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "name": {
+            "label": "Agency Name",
+            "format": "text"
+          },
+          "rating": {
+            "label": "Rating",
+            "format": "number"
+          },
+          "location": {
+            "label": "Location",
+            "format": "text"
+          },
+          "min_budget": {
+            "label": "Min Budget",
+            "format": "text"
+          },
+          "hourly_rate": {
+            "label": "Hourly Rate",
+            "format": "text"
+          },
+          "company_size": {
+            "label": "Company Size",
+            "format": "text"
+          },
+          "url": {
+            "label": "URL",
+            "format": "link"
+          }
+        }
+      }
+    }
+  }
+}
