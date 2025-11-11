@@ -235,40 +235,63 @@ async function main() {
         const findAgencyLinks = ($$, base) => {
             const links = new Set();
             
-            // Primary selector: Find all profile links in the page
-            const profileLinks = $$('.provider-row a[href*="/profile/"], h3 a[href*="/profile/"], .provider-card a[href*="/profile/"], .directory-listing a[href*="/profile/"]');
-            profileLinks.each((_, el) => {
-                const href = $$(el).attr('href');
-                if (href) {
-                    // Handle redirect URLs
-                    let candidate = href;
-                    if (candidate.includes('r.clutch.co/redirect')) {
-                        try {
-                            const url = new URL(candidate);
-                            const u = url.searchParams.get('u');
-                            if (u) candidate = decodeURIComponent(u);
-                        } catch {
-                            return; // Skip invalid URLs
-                        }
-                    }
-                    // Ensure it's a profile URL
-                    if (candidate.includes('/profile/')) {
-                        const abs = toAbs(candidate, base);
-                        if (abs) links.add(abs);
-                    }
-                }
-            });
+            // Primary selectors for direct profile links
+            const directSelectors = [
+                'a[href*="/profile/"]',
+                'h3 a[href*="/profile/"]',
+                'h2 a[href*="/profile/"]',
+                '.provider-row a[href*="/profile/"]',
+                '.provider-card a[href*="/profile/"]',
+                '.directory-listing a[href*="/profile/"]',
+                '.company-name a[href*="/profile/"]',
+                '.company-link a[href*="/profile/"]'
+            ];
             
-            // Additional fallbacks for different HTML structures
-            $$('.provider-row, .provider-card, .directory-listing').each((_, container) => {
-                const containerLinks = $$(container).find('a[href]');
-                containerLinks.each((_, el) => {
+            directSelectors.forEach(selector => {
+                $$(selector).each((_, el) => {
                     const href = $$(el).attr('href');
                     if (href && href.includes('/profile/')) {
                         const abs = toAbs(href, base);
                         if (abs) links.add(abs);
                     }
                 });
+            });
+            
+            // Handle redirect links (featured providers)
+            const redirectSelectors = [
+                'a[href*="r.clutch.co/redirect"]',
+                'a[href*="redirect?"]',
+                '[href*="featured_listing_id"]'
+            ];
+            
+            redirectSelectors.forEach(selector => {
+                $$(selector).each((_, el) => {
+                    const href = $$(el).attr('href');
+                    if (href && (href.includes('r.clutch.co/redirect') || href.includes('redirect?'))) {
+                        try {
+                            const url = new URL(href);
+                            const redirectUrl = url.searchParams.get('u');
+                            if (redirectUrl) {
+                                const decodedUrl = decodeURIComponent(redirectUrl);
+                                if (decodedUrl.includes('/profile/')) {
+                                    const abs = toAbs(decodedUrl, base);
+                                    if (abs) links.add(abs);
+                                }
+                            }
+                        } catch {
+                            // Skip invalid URLs
+                        }
+                    }
+                });
+            });
+            
+            // Fallback: search for any links that might contain profile URLs in text
+            $$('a[href]').each((_, el) => {
+                const href = $$(el).attr('href');
+                if (href && href.includes('/profile/') && !links.has(toAbs(href, base))) {
+                    const abs = toAbs(href, base);
+                    if (abs) links.add(abs);
+                }
             });
             
             return [...links];
@@ -296,35 +319,85 @@ async function main() {
         };
 
         const findNextPageUrl = ($$, requestUrl, pageNo) => {
-            // Look for pagination links
-            const paginationSelectors = [
+            // Look for pagination links with multiple strategies
+            const paginationStrategies = [
+                // Standard next link
                 'a[rel="next"]',
                 'a.next',
-                'a[href*="page="]',
+                'a.next-page',
+                'a.pagination__next',
+                
+                // Links with "Next" text
                 'a:contains("Next")',
                 'a:contains("›")',
                 'a:contains("»")',
+                'a:contains("→")',
+                
+                // Page parameter links
+                'a[href*="?page="]',
+                'a[href*="&page="]',
+                
+                // Pagination container links
                 '.pagination a[href]',
-                'a.page-link[href]'
+                '.pager a[href]',
+                '.page-links a[href]',
+                '.pager-next a[href]',
+                
+                // Button-style pagination
+                'button:contains("Next")',
+                '.next-btn a[href]',
+                
+                // Generic links that might be pagination
+                'a[href]:not([href*="/profile/"]):not([href^="tel"]):not([href^="mailto"])'
             ];
             
-            for (const selector of paginationSelectors) {
-                const nextLink = $$(selector).filter((_, el) => {
+            for (const selector of paginationStrategies) {
+                const nextLinks = $$(selector);
+                nextLinks.each((_, el) => {
+                    const href = $$(el).attr('href');
+                    if (!href) return;
+                    
+                    // Check if it's a valid next page link
+                    const text = $$(el).text().toLowerCase().trim();
+                    const isPagination = (
+                        // Text-based indicators
+                        /(next|›|»|→|continue)/.test(text) ||
+                        // URL-based indicators
+                        href.includes(`page=${pageNo + 1}`) ||
+                        href.includes('?page=') || 
+                        href.includes('&page=') ||
+                        // Numeric pagination
+                        /\d+$/.test(href.split('page=').pop() || '') ||
+                        // Explicit page numbers
+                        (pageNo < 10 && text === String(pageNo + 1))
+                    );
+                    
+                    if (isPagination) {
+                        const abs = toAbs(href, requestUrl);
+                        if (abs && abs !== requestUrl) {
+                            return abs; // Return the first valid pagination link found
+                        }
+                    }
+                });
+                
+                // If we found a valid next page in this strategy, use it
+                const validNext = nextLinks.filter((_, el) => {
                     const href = $$(el).attr('href');
                     if (!href) return false;
                     
-                    // Check if it's a next page link
-                    const text = $$(el).text().toLowerCase();
-                    const isNext = /(next|›|»|\bpage\b)/.test(text) || 
-                                 href.includes(`page=${pageNo + 1}`) ||
-                                 href.includes('?page=') || 
-                                 href.includes('&page=');
+                    const text = $$(el).text().toLowerCase().trim();
+                    const isPagination = (
+                        /(next|›|»|→|continue)/.test(text) ||
+                        href.includes(`page=${pageNo + 1}`) ||
+                        href.includes('?page=') || 
+                        href.includes('&page=')
+                    );
                     
-                    return isNext;
-                }).first();
+                    return isPagination;
+                });
                 
-                if (nextLink.length) {
-                    const href = nextLink.attr('href');
+                if (validNext.length) {
+                    const href = validNext.first().attr('href');
                     const abs = toAbs(href, requestUrl);
                     if (abs) return abs;
                 }
