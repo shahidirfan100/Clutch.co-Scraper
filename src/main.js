@@ -467,29 +467,8 @@ async function main() {
 
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
-            concurrency: 3, // Reduced for better stealth
-
-            prepareRequestFunction({ request, requestOptions }) {
-                // Add dynamic headers for stealth
-                requestOptions.headers = {
-                    ...requestOptions.headers,
-                    ...headerGenerator.getHeaders(),
-                    'Sec-CH-UA': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
-                    'Sec-CH-UA-Mobile': '?0',
-                    'Sec-CH-UA-Platform': '"Windows"',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    Referer: request.userData?.referer || 'https://clutch.co',
-                    'Cache-Control': 'no-cache',
-                    Pragma: 'no-cache',
-                };
-                // Configure timeout
-                requestOptions.timeout = { request: 30000 };
-            },
+            maxRequestsPerCrawl: RESULTS_WANTED * 3,
+            
             async requestHandler({ request, $, enqueueLinks, log: crawlerLog }) {
                 const label = request.userData?.label || 'LIST';
                 const pageNo = request.userData?.pageNo || 1;
