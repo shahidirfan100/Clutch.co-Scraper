@@ -467,7 +467,6 @@ async function main() {
 
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
-            maxRequestRetries: 3,
             useSessionPool: true,
             sessionPoolOptions: {
                 maxPoolSize: 10, // Moderate session pool for stealth
@@ -478,7 +477,15 @@ async function main() {
             },
             maxConcurrency: 3, // Reduced for better stealth
             requestHandlerTimeoutSecs: 90, // Increased timeout
-            additionalHttpRequestOptions: {
+            retryConfiguration: {
+                maxRetries: 3,
+                backoffBase: 500,
+                backoffFactor: 2,
+                maxBackoffMillis: 10000, // Exponential backoff up to 10s
+            },
+            
+            // Modern Crawlee HTTP options
+            httpRequestOptions: {
                 headers: {
                     'Sec-CH-UA': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
                     'Sec-CH-UA-Mobile': '?0',
@@ -490,13 +497,10 @@ async function main() {
                     'Upgrade-Insecure-Requests': '1',
                 },
                 useHttp2: false,
-                retry: {
-                    limit: 3,
-                    methods: ['GET'],
-                    backoffLimit: 10000, // Exponential backoff up to 10s
-                },
             },
+            
             prepareRequestFunction({ request, requestOptions }) {
+                // Add dynamic headers for stealth
                 requestOptions.headers = {
                     ...requestOptions.headers,
                     ...headerGenerator.getHeaders(),
