@@ -235,6 +235,8 @@ async function main() {
         const findAgencyLinks = ($$, base) => {
             const links = new Set();
             
+            crawlerLog.info(`🔍 Searching for agency links in page with ${$$('body').text().length} characters`);
+            
             // Primary selectors for direct profile links
             const directSelectors = [
                 'a[href*="/profile/"]',
@@ -248,13 +250,20 @@ async function main() {
             ];
             
             directSelectors.forEach(selector => {
+                const matches = [];
                 $$(selector).each((_, el) => {
                     const href = $$(el).attr('href');
                     if (href && href.includes('/profile/')) {
                         const abs = toAbs(href, base);
-                        if (abs) links.add(abs);
+                        if (abs) {
+                            links.add(abs);
+                            matches.push(href);
+                        }
                     }
                 });
+                if (matches.length > 0) {
+                    crawlerLog.info(`  ✅ Direct selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
+                }
             });
             
             // Handle redirect links (featured providers)
@@ -265,6 +274,7 @@ async function main() {
             ];
             
             redirectSelectors.forEach(selector => {
+                const matches = [];
                 $$(selector).each((_, el) => {
                     const href = $$(el).attr('href');
                     if (href && (href.includes('r.clutch.co/redirect') || href.includes('redirect?'))) {
@@ -275,7 +285,10 @@ async function main() {
                                 const decodedUrl = decodeURIComponent(redirectUrl);
                                 if (decodedUrl.includes('/profile/')) {
                                     const abs = toAbs(decodedUrl, base);
-                                    if (abs) links.add(abs);
+                                    if (abs) {
+                                        links.add(abs);
+                                        matches.push(decodedUrl);
+                                    }
                                 }
                             }
                         } catch {
@@ -283,16 +296,32 @@ async function main() {
                         }
                     }
                 });
+                if (matches.length > 0) {
+                    crawlerLog.info(`  🔗 Redirect selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
+                }
             });
             
             // Fallback: search for any links that might contain profile URLs in text
+            const fallbackMatches = [];
             $$('a[href]').each((_, el) => {
                 const href = $$(el).attr('href');
                 if (href && href.includes('/profile/') && !links.has(toAbs(href, base))) {
                     const abs = toAbs(href, base);
-                    if (abs) links.add(abs);
+                    if (abs) {
+                        links.add(abs);
+                        fallbackMatches.push(href);
+                    }
                 }
             });
+            
+            if (fallbackMatches.length > 0) {
+                crawlerLog.info(`  🎯 Fallback search found ${fallbackMatches.length} additional links: ${fallbackMatches.slice(0, 2).join(', ')}...`);
+            }
+            
+            crawlerLog.info(`📊 Total unique agency links found: ${links.size}`);
+            if (links.size > 0) {
+                crawlerLog.info(`📋 Sample links: ${[...links].slice(0, 3).join(', ')}`);
+            }
             
             return [...links];
         };        const filterNewLinks = (links, seenSet, limit) => {
@@ -319,6 +348,8 @@ async function main() {
         };
 
         const findNextPageUrl = ($$, requestUrl, pageNo) => {
+            crawlerLog.info(`🔎 Searching for next page from page ${pageNo}`);
+            
             // Look for pagination links with multiple strategies
             const paginationStrategies = [
                 // Standard next link
@@ -353,6 +384,8 @@ async function main() {
             
             for (const selector of paginationStrategies) {
                 const nextLinks = $$(selector);
+                crawlerLog.info(`  🔍 Testing selector "${selector}": ${nextLinks.length} matches`);
+                
                 nextLinks.each((_, el) => {
                     const href = $$(el).attr('href');
                     if (!href) return;
@@ -372,9 +405,12 @@ async function main() {
                         (pageNo < 10 && text === String(pageNo + 1))
                     );
                     
+                    crawlerLog.info(`    📄 Found link: "${text}" -> ${href} (isPagination: ${isPagination})`);
+                    
                     if (isPagination) {
                         const abs = toAbs(href, requestUrl);
                         if (abs && abs !== requestUrl) {
+                            crawlerLog.info(`    ✅ Selected next page: ${abs}`);
                             return abs; // Return the first valid pagination link found
                         }
                     }
@@ -399,12 +435,21 @@ async function main() {
                 if (validNext.length) {
                     const href = validNext.first().attr('href');
                     const abs = toAbs(href, requestUrl);
-                    if (abs) return abs;
+                    if (abs) {
+                        crawlerLog.info(`    ✅ Filtered next page: ${abs}`);
+                        return abs;
+                    }
                 }
             }
             
             // Build fallback pagination URL
-            return buildNextPageFallback(requestUrl, pageNo + 1);
+            const fallback = buildNextPageFallback(requestUrl, pageNo + 1);
+            if (fallback) {
+                crawlerLog.info(`    🔄 Using fallback pagination: ${fallback}`);
+            } else {
+                crawlerLog.info(`    ❌ No pagination found`);
+            }
+            return fallback;
         };
 
         const buildStartUrl = (cat, loc) => {
@@ -488,6 +533,8 @@ async function main() {
                     throw new Error(`Page load failed for ${request.url}`);
                 }
 
+                crawlerLog.info(`Page loaded successfully. Body length: ${$('body').text().length} chars`);
+
                 if (label === 'LIST') {
                     const jsonLdBlocks = extractJsonLdScripts($);
                     const jsonLdLinks = extractProfileLinksFromJsonLd(jsonLdBlocks, request.url);
@@ -495,6 +542,14 @@ async function main() {
                     const candidateLinks = [...new Set([...jsonLdLinks, ...domLinks])];
 
                     crawlerLog.info(`LIST ${request.url} (page ${pageNo}) -> ${candidateLinks.length} candidates (dom ${domLinks.length}, jsonld ${jsonLdLinks.length})`);
+                    
+                    // Debug: log some sample links found
+                    if (domLinks.length > 0) {
+                        crawlerLog.info(`Sample DOM links: ${domLinks.slice(0, 3).join(', ')}`);
+                    }
+                    if (jsonLdLinks.length > 0) {
+                        crawlerLog.info(`Sample JSON-LD links: ${jsonLdLinks.slice(0, 3).join(', ')}`);
+                    }
 
                     const remaining = Math.max(0, RESULTS_WANTED - saved);
                     if (!remaining) {
@@ -556,57 +611,39 @@ async function main() {
                             crawlerLog.warning(`Missing JSON-LD organization on ${request.url}, falling back to DOM heuristics`);
                         }
                         const bodyText = $('body').text();
-                        const ratingText = $('[class*="rating"]').first().text().trim() || '';
-                        const ratingValue = parseNumber(organization?.aggregateRating?.ratingValue ?? ratingText.match(/(\d+(\.\d+)?)/)?.[1]);
-                        const reviewCount = parseInteger(organization?.aggregateRating?.reviewCount ?? bodyText.match(/([0-9,]+)\s+reviews?/i)?.[1]);
-                        const minBudgetText = organization?.priceRange ?? bodyText.match(/Min project size([^\n]+)/i)?.[1]?.trim() ?? null;
-                        const hourlyText = bodyText.match(/Hourly rate([^\n]+)/i)?.[1]?.trim() ?? null;
-                        const employeesText = organization?.numberOfEmployees ?? bodyText.match(/Employees([^\n]+)/i)?.[1]?.trim() ?? null;
-                        const structuredAddress = formatAddress(organization?.address);
-                        const locationText = structuredAddress ?? bodyText.match(/Locations?([^\n]+)/i)?.[1]?.trim() ?? null;
-                        const descSection = $('h2:contains("Empowering"), h2:contains("About"), h2:contains("Overview")').first();
-                        const descriptionFromDom = descSection.length ? cleanText(descSection.nextUntil('h2').html()) : null;
-                        const description = organization?.description ? String(organization.description).trim() : descriptionFromDom;
-                        const fallbackWebsite = $('a:contains("Visit"), a:contains("Visit website"), a:contains("website")').filter((_, el) => /visit|website/i.test($(el).text())).first().attr('href') || null;
-                        const sameAsUrl = Array.isArray(organization?.sameAs)
-                            ? organization.sameAs.find((value) => typeof value === 'string')
-                            : typeof organization?.sameAs === 'string'
-                                ? organization.sameAs
-                                : null;
-                        const website = organization?.url ?? sameAsUrl ?? fallbackWebsite ?? null;
-                        const phoneAnchor = $('a[href^="tel:"]').first().attr('href');
-                        const emailAnchor = $('a[href^="mailto:"]').first().attr('href');
-                        const phone = organization?.telephone ?? (phoneAnchor ? phoneAnchor.replace(/^tel:/, '').trim() : null);
-                        const email = organization?.email ?? (emailAnchor ? emailAnchor.replace(/^mailto:/, '').trim() : null);
-                        const services = extractServicesFromPage($);
-                        const industries = extractIndustriesFromPage($);
-                        const awards = extractAwards($);
-                        const testimonials = extractTestimonials($);
+                        crawlerLog.info(`Detail page loaded: ${request.url}, body length: ${bodyText.length}`);
+                        
                         const name = organization?.name ?? $('h1').first().text().trim() ?? null;
+                        crawlerLog.info(`Extracted name: ${name || 'null'}`);
+                        
                         if (!name) {
                             crawlerLog.warning(`No agency name found on ${request.url}, skipping`);
                             return;
                         }
+
+                        const ratingText = $('[class*="rating"]').first().text().trim() || '';
+                        const ratingValue = parseNumber(organization?.aggregateRating?.ratingValue ?? ratingText.match(/(\d+(\.\d+)?)/)?.[1]);
+                        const reviewCount = parseInteger(organization?.aggregateRating?.reviewCount ?? bodyText.match(/([0-9,]+)\s+reviews?/i)?.[1]);
 
                         const item = {
                             name,
                             rating: ratingValue,
                             review_count: reviewCount,
                             verified: $('[class*="verified"]').first().text().trim() || null,
-                            min_budget: minBudgetText,
-                            hourly_rate: hourlyText,
-                            company_size: employeesText,
-                            location: locationText,
-                            services,
-                            industries,
-                            awards,
-                            testimonials,
-                            description: description || null,
-                            website,
-                            phone,
-                            email,
+                            min_budget: organization?.priceRange ?? bodyText.match(/Min project size([^\n]+)/i)?.[1]?.trim() ?? null,
+                            hourly_rate: bodyText.match(/Hourly rate([^\n]+)/i)?.[1]?.trim() ?? null,
+                            company_size: organization?.numberOfEmployees ?? bodyText.match(/Employees([^\n]+)/i)?.[1]?.trim() ?? null,
+                            location: null, // Will be extracted below
+                            services: null, // Will be extracted below
+                            industries: null, // Will be extracted below
+                            awards: null, // Will be extracted below
+                            testimonials: null, // Will be extracted below
+                            description: null, // Will be extracted below
+                            website: null, // Will be extracted below
+                            phone: null, // Will be extracted below
+                            email: null, // Will be extracted below
                             url: request.url,
-                            address: structuredAddress ?? null,
+                            address: null, // Will be extracted below
                             json_ld: organization ? {
                                 '@type': organization['@type'],
                                 name: organization.name,
