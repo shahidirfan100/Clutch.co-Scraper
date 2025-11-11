@@ -467,19 +467,13 @@ async function main() {
 
         const crawler = new CheerioCrawler({
             proxyConfiguration: proxyConf,
-            useSessionPool: true,
-            sessionPoolOptions: {
-                maxPoolSize: 10, // Moderate session pool for stealth
-                sessionOptions: {
-                    maxUsageCount: 10, // Balance between stealth and efficiency
-                    maxErrorScore: 0.5,
-                },
-            },
-            maxConcurrency: 3, // Reduced for better stealth
+            concurrency: 3, // Reduced for better stealth
 
-            // Modern Crawlee HTTP options
-            httpRequestOptions: {
-                headers: {
+            prepareRequestFunction({ request, requestOptions }) {
+                // Add dynamic headers for stealth
+                requestOptions.headers = {
+                    ...requestOptions.headers,
+                    ...headerGenerator.getHeaders(),
                     'Sec-CH-UA': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
                     'Sec-CH-UA-Mobile': '?0',
                     'Sec-CH-UA-Platform': '"Windows"',
@@ -488,21 +482,13 @@ async function main() {
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
                     'Upgrade-Insecure-Requests': '1',
-                },
-                useHttp2: false,
-                timeout: { request: 30000 }, // 30 second timeout
-            },
-            
-            prepareRequestFunction({ request, requestOptions }) {
-                // Add dynamic headers for stealth
-                requestOptions.headers = {
-                    ...requestOptions.headers,
-                    ...headerGenerator.getHeaders(),
                     'Accept-Language': 'en-US,en;q=0.9',
                     Referer: request.userData?.referer || 'https://clutch.co',
                     'Cache-Control': 'no-cache',
                     Pragma: 'no-cache',
                 };
+                // Configure timeout
+                requestOptions.timeout = { request: 30000 };
             },
             async requestHandler({ request, $, enqueueLinks, log: crawlerLog }) {
                 const label = request.userData?.label || 'LIST';
