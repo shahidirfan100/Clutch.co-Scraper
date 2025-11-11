@@ -495,9 +495,9 @@ async function main() {
                         locales: ['en-US'],
                     });
                     
-                    // Add random delay for human-like behavior
+                    // Add random delay for human-like behavior (use Promise-based delay)
                     const delay = Math.floor(Math.random() * 1500) + 500;
-                    await Actor.utils.sleep(delay);
+                    await new Promise(resolve => setTimeout(resolve, delay));
                     
                     // Set comprehensive headers
                     requestAsBrowserOptions.headers = {
@@ -518,8 +518,10 @@ async function main() {
                         'Referer': request.userData?.referer || 'https://www.google.com/',
                     };
                     
-                    // Log for debugging
-                    log.info(`Pre-navigation hook applied headers for: ${request.url}`);
+                    // Log for debugging (only if log is available)
+                    if (typeof log !== 'undefined') {
+                        log.info(`Pre-navigation hook applied headers for: ${request.url}`);
+                    }
                 }
             ],
             
