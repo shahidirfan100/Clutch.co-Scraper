@@ -232,10 +232,10 @@ async function main() {
             return Number.isFinite(integer) ? integer : null;
         };
 
-        const findAgencyLinks = ($$, base) => {
+        const findAgencyLinks = ($$, base, logger = log) => {
             const links = new Set();
             
-            crawlerLog.info(`🔍 Searching for agency links in page with ${$$('body').text().length} characters`);
+            logger.info(`🔍 Searching for agency links in page with ${$$('body').text().length} characters`);
             
             // Primary selectors for direct profile links
             const directSelectors = [
@@ -262,7 +262,7 @@ async function main() {
                     }
                 });
                 if (matches.length > 0) {
-                    crawlerLog.info(`  ✅ Direct selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
+                    logger.info(`  ✅ Direct selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
                 }
             });
             
@@ -297,7 +297,7 @@ async function main() {
                     }
                 });
                 if (matches.length > 0) {
-                    crawlerLog.info(`  🔗 Redirect selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
+                    logger.info(`  🔗 Redirect selector "${selector}" found ${matches.length} links: ${matches.slice(0, 2).join(', ')}...`);
                 }
             });
             
@@ -315,12 +315,12 @@ async function main() {
             });
             
             if (fallbackMatches.length > 0) {
-                crawlerLog.info(`  🎯 Fallback search found ${fallbackMatches.length} additional links: ${fallbackMatches.slice(0, 2).join(', ')}...`);
+                logger.info(`  🎯 Fallback search found ${fallbackMatches.length} additional links: ${fallbackMatches.slice(0, 2).join(', ')}...`);
             }
             
-            crawlerLog.info(`📊 Total unique agency links found: ${links.size}`);
+            logger.info(`📊 Total unique agency links found: ${links.size}`);
             if (links.size > 0) {
-                crawlerLog.info(`📋 Sample links: ${[...links].slice(0, 3).join(', ')}`);
+                logger.info(`📋 Sample links: ${[...links].slice(0, 3).join(', ')}`);
             }
             
             return [...links];
@@ -347,22 +347,16 @@ async function main() {
             }
         };
 
-        const findNextPageUrl = ($$, requestUrl, pageNo) => {
-            crawlerLog.info(`🔎 Searching for next page from page ${pageNo}`);
+        const findNextPageUrl = ($$, requestUrl, pageNo, logger = log) => {
+            logger.info(`🔎 Searching for next page from page ${pageNo}`);
             
-            // Look for pagination links with multiple strategies
+            // Look for pagination links with multiple strategies (Cheerio doesn't support :contains)
             const paginationStrategies = [
                 // Standard next link
                 'a[rel="next"]',
                 'a.next',
                 'a.next-page',
                 'a.pagination__next',
-                
-                // Links with "Next" text
-                'a:contains("Next")',
-                'a:contains("›")',
-                'a:contains("»")',
-                'a:contains("→")',
                 
                 // Page parameter links
                 'a[href*="?page="]',
@@ -373,9 +367,6 @@ async function main() {
                 '.pager a[href]',
                 '.page-links a[href]',
                 '.pager-next a[href]',
-                
-                // Button-style pagination
-                'button:contains("Next")',
                 '.next-btn a[href]',
                 
                 // Generic links that might be pagination
@@ -384,9 +375,12 @@ async function main() {
             
             for (const selector of paginationStrategies) {
                 const nextLinks = $$(selector);
-                crawlerLog.info(`  🔍 Testing selector "${selector}": ${nextLinks.length} matches`);
+                logger.info(`  🔍 Testing selector "${selector}": ${nextLinks.length} matches`);
                 
+                let foundUrl = null;
                 nextLinks.each((_, el) => {
+                    if (foundUrl) return; // Already found a match
+                    
                     const href = $$(el).attr('href');
                     if (!href) return;
                     
@@ -405,57 +399,44 @@ async function main() {
                         (pageNo < 10 && text === String(pageNo + 1))
                     );
                     
-                    crawlerLog.info(`    📄 Found link: "${text}" -> ${href} (isPagination: ${isPagination})`);
+                    logger.info(`    📄 Found link: "${text}" -> ${href} (isPagination: ${isPagination})`);
                     
                     if (isPagination) {
                         const abs = toAbs(href, requestUrl);
                         if (abs && abs !== requestUrl) {
-                            crawlerLog.info(`    ✅ Selected next page: ${abs}`);
-                            return abs; // Return the first valid pagination link found
+                            logger.info(`    ✅ Selected next page: ${abs}`);
+                            foundUrl = abs;
                         }
                     }
                 });
                 
-                // If we found a valid next page in this strategy, use it
-                const validNext = nextLinks.filter((_, el) => {
-                    const href = $$(el).attr('href');
-                    if (!href) return false;
-                    
-                    const text = $$(el).text().toLowerCase().trim();
-                    const isPagination = (
-                        /(next|›|»|→|continue)/.test(text) ||
-                        href.includes(`page=${pageNo + 1}`) ||
-                        href.includes('?page=') || 
-                        href.includes('&page=')
-                    );
-                    
-                    return isPagination;
-                });
-                
-                if (validNext.length) {
-                    const href = validNext.first().attr('href');
-                    const abs = toAbs(href, requestUrl);
-                    if (abs) {
-                        crawlerLog.info(`    ✅ Filtered next page: ${abs}`);
-                        return abs;
-                    }
-                }
+                if (foundUrl) return foundUrl;
             }
             
             // Build fallback pagination URL
             const fallback = buildNextPageFallback(requestUrl, pageNo + 1);
             if (fallback) {
-                crawlerLog.info(`    🔄 Using fallback pagination: ${fallback}`);
+                logger.info(`    🔄 Using fallback pagination: ${fallback}`);
             } else {
-                crawlerLog.info(`    ❌ No pagination found`);
+                logger.info(`    ❌ No pagination found`);
             }
             return fallback;
         };
 
         const buildStartUrl = (cat, loc) => {
-            // Clutch.co uses /agencies for listing all agencies
-            // Categories and location filters are handled via query parameters
-            const baseUrl = 'https://clutch.co/agencies';
+            // Clutch.co category pages like /advertising, /it-services, etc.
+            let baseUrl = 'https://clutch.co';
+            
+            // If category provided, use category-specific page
+            if (cat && String(cat).trim()) {
+                const catPath = String(cat).trim().toLowerCase();
+                // Handle both 'advertising' and 'advertising/' formats
+                baseUrl = `${baseUrl}/${catPath.replace(/^\/+|\/+$/g, '')}`;
+            } else {
+                // Default to agencies listing
+                baseUrl = `${baseUrl}/agencies`;
+            }
+            
             const u = new URL(baseUrl);
             
             // Add location filter if provided
@@ -463,11 +444,17 @@ async function main() {
                 u.searchParams.set('location', String(loc).trim());
             }
             
-            // For categories, we'll rely on the default advertising category
-            // or let users specify via startUrl
             return u.href;
-        };        const initial = [];
-        if (Array.isArray(startUrls) && startUrls.length) initial.push(...startUrls);
+        };
+
+        const initial = [];
+        // Handle startUrls array (could be array of objects with url property or array of strings)
+        if (Array.isArray(startUrls) && startUrls.length) {
+            startUrls.forEach(item => {
+                const urlStr = typeof item === 'string' ? item : item?.url;
+                if (urlStr) initial.push(urlStr);
+            });
+        }
         if (startUrl) initial.push(startUrl);
         if (url) initial.push(url);
         if (!initial.length) initial.push(buildStartUrl(category, location));
@@ -483,14 +470,14 @@ async function main() {
             maxRequestRetries: 3,
             useSessionPool: true,
             sessionPoolOptions: {
-                maxPoolSize: 20, // Aggressive session rotation for stealth
+                maxPoolSize: 10, // Moderate session pool for stealth
                 sessionOptions: {
-                    maxUsageCount: 5, // Rotate sessions frequently
+                    maxUsageCount: 10, // Balance between stealth and efficiency
                     maxErrorScore: 0.5,
                 },
             },
-            maxConcurrency: 5,
-            requestHandlerTimeoutSecs: 60,
+            maxConcurrency: 3, // Reduced for better stealth
+            requestHandlerTimeoutSecs: 90, // Increased timeout
             additionalHttpRequestOptions: {
                 headers: {
                     'Sec-CH-UA': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
@@ -532,13 +519,28 @@ async function main() {
                     crawlerLog.error(`Failed to load page: ${request.url} - no body found`);
                     throw new Error(`Page load failed for ${request.url}`);
                 }
-
-                crawlerLog.info(`Page loaded successfully. Body length: ${$('body').text().length} chars`);
+                
+                const bodyText = $('body').text();
+                const bodyLength = bodyText.length;
+                
+                crawlerLog.info(`Page loaded successfully. Body length: ${bodyLength} chars`);
+                
+                // Check if page has meaningful content
+                if (bodyLength < 100) {
+                    crawlerLog.warning(`Page appears empty or blocked: ${request.url} (body: ${bodyLength} chars)`);
+                    throw new Error(`Insufficient content on page: ${request.url}`);
+                }
+                
+                // Check for common blocking indicators
+                if (bodyText.includes('Access Denied') || bodyText.includes('403 Forbidden') || bodyText.includes('blocked')) {
+                    crawlerLog.warning(`Possible blocking detected on ${request.url}`);
+                    throw new Error(`Page access blocked: ${request.url}`);
+                }
 
                 if (label === 'LIST') {
                     const jsonLdBlocks = extractJsonLdScripts($);
                     const jsonLdLinks = extractProfileLinksFromJsonLd(jsonLdBlocks, request.url);
-                    const domLinks = findAgencyLinks($, request.url);
+                    const domLinks = findAgencyLinks($, request.url, crawlerLog);
                     const candidateLinks = [...new Set([...jsonLdLinks, ...domLinks])];
 
                     crawlerLog.info(`LIST ${request.url} (page ${pageNo}) -> ${candidateLinks.length} candidates (dom ${domLinks.length}, jsonld ${jsonLdLinks.length})`);
@@ -582,7 +584,7 @@ async function main() {
                     }
 
                     if (pageNo < MAX_PAGES) {
-                        const next = findNextPageUrl($, request.url, pageNo);
+                        const next = findNextPageUrl($, request.url, pageNo, crawlerLog);
                         if (next) {
                             try {
                                 await enqueueLinks({ urls: [next], userData: { label: 'LIST', pageNo: pageNo + 1, referer: request.url } });
@@ -664,19 +666,20 @@ async function main() {
             }
         });
 
-        try {
-            console.log('pre-crawl', initial.length, initial);
-            log.info(`Scheduling ${initial.length} initial request(s) for ${initial.join(', ')}`);
-            await crawler.run(initial.map(u => ({ url: u, userData: { label: 'LIST', pageNo: 1, referer: 'https://clutch.co' } })));
-            console.log('post-crawl reached');
-            log.info(`Finished scraping. Total saved: ${saved} agencies`);
-        } catch (err) {
-            log.error(`Crawler failed: ${err.message}`);
-            throw err;
-        }
-    } finally {
-        await Actor.exit();
+        console.log('pre-crawl', initial.length, initial);
+        log.info(`Scheduling ${initial.length} initial request(s) for ${initial.join(', ')}`);
+        await crawler.run(initial.map(u => ({ url: u, userData: { label: 'LIST', pageNo: 1, referer: 'https://clutch.co' } })));
+        console.log('post-crawl reached');
+        log.info(`Finished scraping. Total saved: ${saved} agencies`);
+    } catch (err) {
+        log.error(`Crawler failed: ${err.message}`);
+        throw err;
     }
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main()
+    .then(() => Actor.exit())
+    .catch(err => { 
+        console.error(err); 
+        Actor.exit({ exit: 1, statusMessage: err.message });
+    });
