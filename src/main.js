@@ -541,7 +541,7 @@ async function main() {
                 const label = request.userData?.label || 'LIST';
                 const pageNo = request.userData?.pageNo || 1;
                 const delayMs = Math.floor(Math.random() * 600) + 300;
-                await Actor.utils.sleep(delayMs);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
 
                 crawlerLog.info(`Processing ${label} page ${pageNo}: ${request.url}`);
 
