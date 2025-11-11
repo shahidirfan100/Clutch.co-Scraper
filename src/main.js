@@ -476,14 +476,7 @@ async function main() {
                 },
             },
             maxConcurrency: 3, // Reduced for better stealth
-            requestHandlerTimeoutSecs: 90, // Increased timeout
-            retryConfiguration: {
-                maxRetries: 3,
-                backoffBase: 500,
-                backoffFactor: 2,
-                maxBackoffMillis: 10000, // Exponential backoff up to 10s
-            },
-            
+
             // Modern Crawlee HTTP options
             httpRequestOptions: {
                 headers: {
@@ -497,6 +490,7 @@ async function main() {
                     'Upgrade-Insecure-Requests': '1',
                 },
                 useHttp2: false,
+                timeout: { request: 30000 }, // 30 second timeout
             },
             
             prepareRequestFunction({ request, requestOptions }) {
