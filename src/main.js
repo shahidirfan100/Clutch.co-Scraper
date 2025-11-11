@@ -2,7 +2,7 @@
 import { Actor, log } from 'apify';
 import { CheerioCrawler, Dataset } from 'crawlee';
 import { load as cheerioLoad } from 'cheerio';
-import { createHeaderGenerator } from 'header-generator';
+import { HeaderGenerator } from 'header-generator';
 
 // Single-entrypoint main
 await Actor.init();
@@ -31,7 +31,7 @@ async function main() {
 
         log.info(`Starting Clutch.co scraper with category: "${category}", location: "${location}", results_wanted: ${RESULTS_WANTED}, max_pages: ${MAX_PAGES}`);
 
-        const headerGenerator = createHeaderGenerator();
+        const headerGenerator = new HeaderGenerator({ strict: false });
 
         const toAbs = (href, base = 'https://clutch.co') => {
             try {
