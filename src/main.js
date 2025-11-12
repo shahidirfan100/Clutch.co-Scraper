@@ -125,41 +125,76 @@ const extractOrganizationFromJsonLd = (blocks) => {
 };
 
 const extractServicesFromPage = ($$) => {
-    const services = new Set();
-    const selectors = [
-        '.service-tags a',
-        '.service-tags span',
-        '.services-list li',
-        '.specializations a',
-        '.specializations span',
-        '.service-chips li',
-        '[data-test="service"]',
+    const services = [];
+    
+    // Strategy 1: Extract from "Service Lines" section with percentages
+    const serviceLineSelectors = [
+        '[data-test="service-line"]',
+        '.service-line',
+        '.service-lines li',
+        '.services-section li',
+        'section[id*="service"] li',
     ];
-    selectors.forEach((selector) => {
+    
+    serviceLineSelectors.forEach((selector) => {
         $$(selector).each((_, el) => {
             const text = $$(el).text().trim();
-            if (text && text.length > 1) services.add(text);
+            // Match patterns like "Mobile App Development 40%"
+            if (text && text.length > 2) {
+                const cleanText = text.replace(/\s+/g, ' ').trim();
+                if (!services.some(s => s.includes(cleanText.split(/\d+%/)[0].trim()))) {
+                    services.push(cleanText);
+                }
+            }
         });
     });
-    return [...services].slice(0, 20);
+    
+    // Strategy 2: Fallback to general service tags/links
+    if (services.length === 0) {
+        const fallbackSelectors = [
+            '.service-tags a',
+            '.service-tags span',
+            '.services-list li',
+            '.specializations a',
+            '.specializations span',
+            '.service-chips li',
+            '[data-test="service"]',
+        ];
+        
+        fallbackSelectors.forEach((selector) => {
+            $$(selector).each((_, el) => {
+                const text = $$(el).text().trim();
+                if (text && text.length > 1 && !services.includes(text)) {
+                    services.push(text);
+                }
+            });
+        });
+    }
+    
+    return services.slice(0, 20);
 };
 
 const extractIndustriesFromPage = ($$) => {
-    const industries = new Set();
+    const industries = [];
     const selectors = [
+        '[data-test="industry"]',
         '.industry-tags a',
         '.industry-tags span',
         '.industry-list li',
+        '.industries-section li',
         '.specialization-list li',
-        '[data-test="industry"]',
+        'section[id*="industr"] li',
+        '.industry-chip',
     ];
     selectors.forEach((selector) => {
         $$(selector).each((_, el) => {
             const text = $$(el).text().trim();
-            if (text && text.length > 1) industries.add(text);
+            if (text && text.length > 1 && !industries.includes(text)) {
+                industries.push(text);
+            }
         });
     });
-    return [...industries].slice(0, 15);
+    return industries.slice(0, 20);
 };
 
 const extractAwards = ($$) => {
@@ -200,22 +235,29 @@ const extractTestimonials = ($$) => {
 };
 
 const extractLocationsFromPage = ($$) => {
-    const locations = new Set();
+    const locations = [];
     const selectors = [
         '[data-test="location"]',
+        '[data-test="locations"]',
         '.location',
+        '.locations li',
         '.locality',
         '.quick-stats__location',
         '.profile-summary__location',
         '.office-locations li',
+        '.headquarters',
+        'section[id*="location"] li',
     ];
     selectors.forEach((selector) => {
         $$(selector).each((_, el) => {
             const text = $$(el).text().trim().replace(/\s+/g, ' ');
-            if (text) locations.add(text);
+            // Filter out noise like "Locations" headers
+            if (text && text.length > 2 && !text.toLowerCase().includes('location') && !locations.includes(text)) {
+                locations.push(text);
+            }
         });
     });
-    return [...locations].slice(0, 10);
+    return locations.slice(0, 10);
 };
 
 const parseNumber = (value) => {
@@ -600,7 +642,10 @@ const enrichWithState = (item, stateOrganization) => {
 };
 
 const extractDetailItem = ($, organization, stateOrganization, request, meta, html) => {
+    // Remove script and style tags before extracting text
+    $('script, style, noscript').remove();
     const bodyText = $('body').text() || cleanText(html);
+    
     const name = organization?.name
         ?? stateOrganization?.name
         ?? $('[data-test="profile-name"]').first().text().trim()
@@ -625,18 +670,55 @@ const extractDetailItem = ($, organization, stateOrganization, request, meta, ht
     const testimonials = extractTestimonials($);
     const locations = extractLocationsFromPage($);
 
-    const description = $('[data-test="about-text"]').text().trim()
-        || $('#about').text().trim()
-        || stateOrganization?.description
-        || bodyText.slice(0, 600);
+    // Enhanced description extraction with multiple strategies
+    let description = null;
+    
+    // Strategy 1: Look for highlights/about section with proper selectors
+    const descriptionSelectors = [
+        '[data-test="about-text"]',
+        '[data-test="highlights"]',
+        '.highlights-text',
+        '.about-section p',
+        '#about p',
+        '.company-description',
+        '.profile-summary p',
+        'section[id*="highlight"] p',
+        'section[id*="about"] p',
+    ];
+    
+    for (const selector of descriptionSelectors) {
+        if (description) break;
+        const text = $(selector).first().text().trim();
+        if (text && text.length > 50 && !text.includes('gtag') && !text.includes('window.')) {
+            description = text.replace(/\s+/g, ' ').slice(0, 1000);
+            break;
+        }
+    }
+    
+    // Strategy 2: Get from state or fallback to cleaned body text
+    if (!description) {
+        description = stateOrganization?.description || bodyText.slice(0, 800).replace(/\s+/g, ' ');
+    }
+    
+    // Clean description: remove JS artifacts
+    if (description) {
+        description = description
+            .replace(/gtag\([^)]+\);?/g, '')
+            .replace(/window\.[^;]+;?/g, '')
+            .replace(/\{[^}]*\}/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
 
     const minBudget = $('[data-test="minimum-project-size"]').text().trim()
+        || $('[data-test="min-project-size"]').text().trim()
         || organization?.priceRange
         || stateOrganization?.minBudget
-        || bodyText.match(/Min(?:imum)? project size:?([^$]+)/i)?.[1]?.trim()
+        || bodyText.match(/Min(?:imum)? project size[:\s]*([^\n]+)/i)?.[1]?.trim()
         || null;
 
     const hourlyRate = $('[data-test="avg-hourly-rate"]').text().trim()
+        || $('[data-test="hourly-rate"]').text().trim()
         || stateOrganization?.hourlyRate
         || bodyText.match(/Hourly rate:?([^\n]+)/i)?.[1]?.trim()
         || null;
@@ -644,8 +726,44 @@ const extractDetailItem = ($, organization, stateOrganization, request, meta, ht
     const companySize = $('[data-test="employees"]').text().trim()
         || organization?.numberOfEmployees
         || stateOrganization?.companySize
-        || bodyText.match(/Employees:?([^\n]+)/i)?.[1]?.trim()
+        || bodyText.match(/Employees[:\s]*([^\n]+)/i)?.[1]?.trim()
         || null;
+
+    // Extract additional fields from profile page
+    const yearFounded = $('[data-test="year-founded"]').text().trim()
+        || bodyText.match(/Year founded[:\s]*Founded\s*(\d{4})/i)?.[1]
+        || bodyText.match(/Founded[:\s]*(\d{4})/i)?.[1]
+        || stateOrganization?.yearFounded
+        || null;
+
+    const languages = $('[data-test="languages"]').text().trim()
+        || bodyText.match(/Languages[:\s]*(\d+)\s*Languages?/i)?.[1]
+        || stateOrganization?.languages
+        || null;
+
+    const timezones = $('[data-test="timezones"]').text().trim()
+        || bodyText.match(/Timezones[:\s]*(\d+)\s*Timezones?/i)?.[1]
+        || stateOrganization?.timezones
+        || null;
+
+    // Extract highlights/tagline (e.g., "Launch Ventures, not Apps")
+    const highlights = $('[data-test="highlights"]').first().text().trim()
+        || $('h2').first().text().trim()
+        || stateOrganization?.highlights
+        || null;
+
+    // Extract focus areas and clients if available
+    const focusAreas = [];
+    $('[data-test="focus"] li, .focus-section li, section[id*="focus"] li').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 1) focusAreas.push(text);
+    });
+
+    const clientsList = [];
+    $('[data-test="client"] li, .clients-section li, section[id*="client"] li').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 1) clientsList.push(text);
+    });
 
     const item = enrichWithState({
         name,
@@ -654,13 +772,19 @@ const extractDetailItem = ($, organization, stateOrganization, request, meta, ht
         rating: ratingValue,
         review_count: reviewCount,
         verified: $('[class*="verified"]').first().text().trim() || stateOrganization?.verification || null,
+        highlights: highlights || null,
         min_budget: minBudget,
         hourly_rate: hourlyRate,
         company_size: companySize,
+        year_founded: yearFounded,
+        languages: languages,
+        timezones: timezones,
         primary_location: organization?.address?.addressLocality || locations[0] || stateOrganization?.primaryLocation || null,
         locations: locations.length ? locations : stateOrganization?.locations || null,
         services: services.length ? services : null,
         industries: industries.length ? industries : null,
+        focus_areas: focusAreas.length ? focusAreas : null,
+        clients: clientsList.length ? clientsList.slice(0, 10) : null,
         awards: awards.length ? awards : null,
         testimonials: testimonials.length ? testimonials : null,
         description: description || null,
