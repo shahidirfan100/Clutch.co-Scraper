@@ -44,6 +44,23 @@ const normalizeUrl = (href) => {
     }
 };
 
+const canonicalizeProfileUrl = (href) => {
+    if (!href) return null;
+    const normalized = normalizeUrl(href);
+    if (!normalized) return null;
+    try {
+        const parsed = new URL(normalized);
+        parsed.hash = '';
+        parsed.search = '';
+        if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+            parsed.pathname = parsed.pathname.slice(0, -1);
+        }
+        return parsed.href;
+    } catch {
+        return normalized;
+    }
+};
+
 const cleanText = (html) => {
     if (!html) return '';
     const $ = cheerioLoad(html);
@@ -306,12 +323,12 @@ const collectContactInfo = ($$) => {
     };
 };
 
-const filterNewLinks = (links, seenSet, limit = Infinity) => {
+const filterNewLinks = (links, seenSet, limit = Infinity, { canonicalize = normalizeUrl } = {}) => {
     if (!links?.length || !limit) return [];
     const unique = [];
     for (const link of links) {
         if (unique.length >= limit) break;
-        const normalized = normalizeUrl(link);
+        const normalized = canonicalize(link);
         if (!normalized || seenSet.has(normalized)) continue;
         seenSet.add(normalized);
         unique.push(normalized);
@@ -968,7 +985,7 @@ async function main() {
 
                 if (remaining > 0) {
                     if (collectDetails) {
-                        const toEnqueue = filterNewLinks(candidates, seenDetailLinks, remaining);
+                        const toEnqueue = filterNewLinks(candidates, seenDetailLinks, remaining, { canonicalize: canonicalizeProfileUrl });
                         if (toEnqueue.length) {
                             await enqueueLinks({
                                 urls: toEnqueue,
@@ -977,7 +994,7 @@ async function main() {
                             log.info(`Enqueued ${toEnqueue.length} detail pages from ${request.url}`);
                         }
                     } else {
-                        const toPush = filterNewLinks(candidates, seenBasicLinks, remaining).map((link) => ({
+                        const toPush = filterNewLinks(candidates, seenBasicLinks, remaining, { canonicalize: canonicalizeProfileUrl }).map((link) => ({
                             url: link,
                             category_filter: category || null,
                             location_filter: location || null,
@@ -1068,4 +1085,3 @@ main()
         await Actor.setStatusMessage(`Failed: ${err.message}`);
         Actor.exit({ exitCode: 1, statusMessage: err.message });
     });
-
