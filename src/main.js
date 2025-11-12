@@ -630,9 +630,6 @@ async function main() {
     const crawler = new CheerioCrawler({
         proxyConfiguration: proxyConf,
         maxConcurrency: MAX_CONCURRENCY,
-        maxRequestRetries: 6,
-        requestHandlerTimeoutSecs: REQUEST_TIMEOUT,
-        additionalMimeTypes: ['application/xhtml+xml', 'text/html'],
         useSessionPool: true,
         persistCookiesPerSession: true,
         sessionPoolOptions: {
@@ -662,13 +659,9 @@ async function main() {
                 };
                 if (cookieHeader && !baseHeaders.cookie) baseHeaders.cookie = cookieHeader;
 
-                const sessionCookies = session?.getCookieString(request.url);
-                if (sessionCookies?.length) {
-                    baseHeaders.cookie = baseHeaders.cookie
-                        ? `${sessionCookies.join('; ')}; ${baseHeaders.cookie}`
-                        : sessionCookies.join('; ');
-                }
-
+                // Session cookies are automatically handled by Crawlee v3
+                // The persistCookiesPerSession option manages cookies across requests
+                
                 requestAsBrowserOptions.headers = baseHeaders;
                 requestAsBrowserOptions.useHeaderGenerator = false;
 
@@ -699,7 +692,6 @@ async function main() {
                 response,
                 session,
                 enqueueLinks,
-                crawler: crawlerInstance,
             } = context;
             const label = request.userData?.label || 'LIST';
             const pageNo = request.userData?.pageNo || 1;
@@ -754,10 +746,8 @@ async function main() {
                         const toEnqueue = filterNewLinks(candidates, seenDetailLinks, remaining);
                         if (toEnqueue.length) {
                             await enqueueLinks({
-                                requests: toEnqueue.map((link) => ({
-                                    url: link,
-                                    userData: { label: 'DETAIL', referer: request.url },
-                                })),
+                                urls: toEnqueue,
+                                userData: { label: 'DETAIL', referer: request.url },
                             });
                             log.info(`Enqueued ${toEnqueue.length} detail pages from ${request.url}`);
                         }
@@ -778,7 +768,7 @@ async function main() {
                 }
 
                 if (state.saved >= RESULTS_WANTED) {
-                    await crawlerInstance.autoscaledPool?.abort();
+                    await crawler.autoscaledPool?.abort();
                     return;
                 }
 
@@ -788,7 +778,8 @@ async function main() {
                         const normalizedNext = normalizeUrl(nextUrl);
                         if (!normalizedNext || !seenListPages.has(normalizedNext)) {
                             await enqueueLinks({
-                                requests: [createListRequest(nextUrl, pageNo + 1, request.url)],
+                                urls: [nextUrl],
+                                userData: { label: 'LIST', pageNo: pageNo + 1, referer: request.url },
                             });
                             log.debug(`Enqueued next listing page ${nextUrl}`);
                         }
@@ -804,7 +795,7 @@ async function main() {
 
             if (label === 'DETAIL') {
                 if (state.saved >= RESULTS_WANTED) {
-                    await crawlerInstance.autoscaledPool?.abort();
+                    await crawler.autoscaledPool?.abort();
                     return;
                 }
 
@@ -831,7 +822,7 @@ async function main() {
                 log.info(`Saved ${state.saved}/${RESULTS_WANTED}: ${item.name}`);
 
                 if (state.saved >= RESULTS_WANTED) {
-                    await crawlerInstance.autoscaledPool?.abort();
+                    await crawler.autoscaledPool?.abort();
                 }
             }
         },
@@ -850,3 +841,4 @@ main()
         await Actor.setStatusMessage(`Failed: ${err.message}`);
         Actor.exit({ exitCode: 1, statusMessage: err.message });
     });
+
