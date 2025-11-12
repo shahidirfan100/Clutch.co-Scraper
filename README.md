@@ -42,6 +42,12 @@
 <td>Empty</td>
 </tr>
 <tr>
+<td><code>startUrls</code></td>
+<td>array</td>
+<td>Optional array of listing URLs (strings or objects with <code>url</code>). Overrides automatic category/location URL generation.</td>
+<td>Derived from category/location</td>
+</tr>
+<tr>
 <td><code>results_wanted</code></td>
 <td>integer</td>
 <td>Maximum number of agencies to collect. Set to a high number or leave empty to collect all available.</td>
@@ -62,29 +68,31 @@
 <tr>
 <td><code>proxyConfiguration</code></td>
 <td>object</td>
-<td>Proxy settings for reliable scraping. Use Apify Proxy for best results.</td>
+<td>Proxy settings for reliable scraping. Defaults to Apify Residential proxy if available.</td>
 <td>Apify Proxy (Residential)</td>
 </tr>
 <tr>
-<td><code>cookies</code></td>
-<td>string</td>
-<td>Optional raw Cookie header to include in requests.</td>
-<td>Empty</td>
+<td><code>maxConcurrency</code></td>
+<td>integer</td>
+<td>Upper bound for concurrent HTTP requests. Tune based on proxy capacity (1-10).</td>
+<td>4</td>
 </tr>
 <tr>
-<td><code>cookiesJson</code></td>
-<td>string</td>
-<td>Optional cookies in JSON format.</td>
-<td>Empty</td>
+<td><code>requestHandlerTimeoutSecs</code></td>
+<td>integer</td>
+<td>Timeout per request for the Cheerio crawler.</td>
+<td>60</td>
 </tr>
 <tr>
-<td><code>dedupe</code></td>
+<td><code>debugLog</code></td>
 <td>boolean</td>
-<td>Remove duplicate agency URLs from results.</td>
-<td>true</td>
+<td>Enable verbose logging to troubleshoot blocking or parsing issues.</td>
+<td>false</td>
 </tr>
 </tbody>
 </table>
+
+<p>You can also provide single <code>startUrl</code> or <code>url</code> fields (strings) for convenience; they follow the same behavior as items inside <code>startUrls</code>.</p>
 
 ### Usage Example
 
@@ -125,14 +133,29 @@
 <td>Agency name</td>
 </tr>
 <tr>
+<td><code>slug</code></td>
+<td>string</td>
+<td>Profile slug derived from the URL</td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>Clutch.co profile URL</td>
+</tr>
+<tr>
 <td><code>rating</code></td>
 <td>number</td>
 <td>Average client rating (e.g., 4.8)</td>
 </tr>
 <tr>
+<td><code>review_count</code></td>
+<td>integer</td>
+<td>Number of published reviews</td>
+</tr>
+<tr>
 <td><code>verified</code></td>
 <td>string</td>
-<td>Verification status (e.g., "Premier Verified")</td>
+<td>Verification badge text when available</td>
 </tr>
 <tr>
 <td><code>min_budget</code></td>
@@ -150,9 +173,14 @@
 <td>Company size (e.g., "250 - 999")</td>
 </tr>
 <tr>
-<td><code>location</code></td>
+<td><code>primary_location</code></td>
 <td>string</td>
-<td>Primary location</td>
+<td>Main city shown on the profile</td>
+</tr>
+<tr>
+<td><code>locations</code></td>
+<td>array</td>
+<td>All office locations detected on the page</td>
 </tr>
 <tr>
 <td><code>services</code></td>
@@ -160,19 +188,64 @@
 <td>List of services offered</td>
 </tr>
 <tr>
-<td><code>description</code></td>
-<td>string</td>
-<td>Agency description</td>
+<td><code>industries</code></td>
+<td>array</td>
+<td>Industries served</td>
 </tr>
 <tr>
-<td><code>url</code></td>
+<td><code>awards</code></td>
+<td>array</td>
+<td>Recognition and awards badges</td>
+</tr>
+<tr>
+<td><code>testimonials</code></td>
+<td>array</td>
+<td>Sample testimonial snippets (up to 3)</td>
+</tr>
+<tr>
+<td><code>description</code></td>
 <td>string</td>
-<td>Clutch.co profile URL</td>
+<td>About section text</td>
 </tr>
 <tr>
 <td><code>website</code></td>
 <td>string</td>
 <td>Agency website URL</td>
+</tr>
+<tr>
+<td><code>phone</code></td>
+<td>string</td>
+<td>Primary phone number</td>
+</tr>
+<tr>
+<td><code>email</code></td>
+<td>string</td>
+<td>Contact email when available</td>
+</tr>
+<tr>
+<td><code>address</code></td>
+<td>string</td>
+<td>Formatted JSON-LD address</td>
+</tr>
+<tr>
+<td><code>category_filter</code></td>
+<td>string</td>
+<td>Category passed in the input (for auditing)</td>
+</tr>
+<tr>
+<td><code>location_filter</code></td>
+<td>string</td>
+<td>Location passed in the input</td>
+</tr>
+<tr>
+<td><code>fetched_at</code></td>
+<td>string</td>
+<td>ISO timestamp of the detail scrape</td>
+</tr>
+<tr>
+<td><code>meta</code></td>
+<td>object</td>
+<td>Additional crawl metadata (referer, body size, etc.)</td>
 </tr>
 </tbody>
 </table>
@@ -182,16 +255,32 @@
 <pre><code>[
   {
     "name": "Power Digital",
+    "slug": "power-digital",
+    "url": "https://clutch.co/profile/power-digital",
     "rating": 4.8,
+    "review_count": 182,
     "verified": "Premier Verified",
     "min_budget": "$5,000+",
     "hourly_rate": "$100 - $149 / hr",
     "company_size": "250 - 999",
-    "location": "San Diego, CA",
+    "primary_location": "San Diego, CA",
+    "locations": ["San Diego, CA", "New York, NY"],
     "services": ["Advertising", "Social Media Marketing", "Pay Per Click"],
+    "industries": ["Consumer products", "Financial services"],
+    "awards": ["2024 Clutch Champion"],
+    "testimonials": ["They act like an extension of our in-house team..."],
     "description": "Power Digital is a tech-enabled growth firm...",
-    "url": "https://clutch.co/profile/power-digital",
-    "website": "https://powerdigitalmarketing.com"
+    "website": "https://powerdigitalmarketing.com",
+    "phone": "+1 123 456 7890",
+    "email": "hello@powerdigital.com",
+    "address": "225 Broadway, San Diego, CA 92101, United States",
+    "category_filter": "advertising",
+    "location_filter": "San Diego",
+    "fetched_at": "2025-11-12T05:00:00.000Z",
+    "meta": {
+      "referer": "https://clutch.co/advertising",
+      "detail_body_length": 24512
+    }
   }
 ]</code></pre>
 
@@ -200,10 +289,11 @@
 ## Miscellaneous
 
 <ul>
-<li><strong>Limits and Performance</strong>: The Actor respects Clutch.co's terms of service and includes built-in delays to avoid overloading the site. For large datasets, consider running during off-peak hours.</li>
+<li><strong>Limits and Performance</strong>: Concurrency, smart delays, and autoscaled session pools are configurable so you can tune speed vs. stealth.</li>
+<li><strong>Proxy Strategy</strong>: Residential or high-quality datacenter proxies are strongly recommended; the actor falls back to direct connections but blocking is likely.</li>
+<li><strong>Logging</strong>: Enable <code>debugLog</code> to inspect pagination, session health, and blocking diagnostics right in the Apify console.</li>
 <li><strong>Data Freshness</strong>: Results reflect the current state of Clutch.co listings at the time of scraping.</li>
 <li><strong>Support</strong>: For issues or questions, check the Actor's discussion forum on Apify or contact support.</li>
-<li><strong>Updates</strong>: The Actor may be updated to handle changes in Clutch.co's website structure.</li>
 </ul>
 
 <p>This Actor is designed for ethical and legal use only. Always comply with Clutch.co's terms of service and applicable laws.</p>
