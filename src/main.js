@@ -324,79 +324,107 @@ const findAgencyLinks = ($$, base) => {
 };
 
 const buildNextPageUrl = ($$, currentUrl, currentPage = 1) => {
-    // Updated pagination selectors for Clutch.co (Nov 2025)
-    const selectors = [
-        // Standard pagination
-        'a[rel="next"]',
-        'a[aria-label="Next"]',
-        'a[aria-label="Go to next page"]',
-        // Pagination containers
-        '.pagination a[href]:not(.disabled)',
-        '.pager a[href]',
-        '.pager-next a[href]',
-        'nav a[href]',
-        // Button/link classes
-        'a.next',
-        'button[type="button"] + a[href]',
-        // Page parameter links
-        'a[href*="?page="]',
-        'a[href*="&page="]',
-    ];
-    
+    // Updated pagination for Clutch.co /directory/ pages (Dec 2025)
     let candidate = null;
     
-    // Try to find explicit "next" link
-    for (const selector of selectors) {
+    // Strategy 1: Look for "Next Page" / "Go to Next Page" links
+    const nextPageSelectors = [
+        'a[rel="next"]',
+        'a[aria-label="Next"]',
+        'a[aria-label*="next page" i]',
+        'a[aria-label*="Go to Next" i]',
+    ];
+    
+    for (const selector of nextPageSelectors) {
         if (candidate) break;
         $$(selector).each((_, el) => {
-            if (candidate) return false; // stop iteration
-            const href = $$(el).attr('href');
-            if (!href) return;
-            
-            const text = $$(el).text().trim().toLowerCase();
-            const ariaLabel = $$(el).attr('aria-label')?.toLowerCase() || '';
-            
-            const looksLikeNext = 
-                text.includes('next') ||
-                text.includes('›') ||
-                text.includes('→') ||
-                ariaLabel.includes('next') ||
-                href.includes(`page=${currentPage + 1}`) ||
-                (href.includes('?page=') && parseInt(href.match(/page=(\d+)/)?.[1]) > currentPage);
-            
-            if (looksLikeNext) {
-                candidate = href;
-                return false; // stop iteration
-            }
-        });
-    }
-    
-    // Fallback: look for numbered page links (current page + 1)
-    if (!candidate) {
-        $$('a[href]').each((_, el) => {
             if (candidate) return false;
             const href = $$(el).attr('href');
-            const text = $$(el).text().trim();
-            
-            // Check if it's the next page number
-            if (text === String(currentPage + 1) && href.includes('page=')) {
+            if (href && href.trim()) {
                 candidate = href;
                 return false;
             }
         });
     }
     
-    // Last resort: build URL with page parameter
+    // Strategy 2: Find pagination container and look for next page link
+    if (!candidate) {
+        const paginationContainers = ['nav[aria-label*="pagination" i]', '.pagination', 'nav'];
+        
+        for (const containerSel of paginationContainers) {
+            if (candidate) break;
+            $$(containerSel).each((_, container) => {
+                if (candidate) return false;
+                
+                // Look for next page number link within pagination
+                const $container = $$(container);
+                $container.find('a[href]').each((_, link) => {
+                    if (candidate) return false;
+                    
+                    const href = $$(link).attr('href');
+                    const text = $$(link).text().trim();
+                    const ariaLabel = $$(link).attr('aria-label') || '';
+                    
+                    // Check for "Next", page number, or arrow symbols
+                    const isNext = 
+                        text.toLowerCase().includes('next') ||
+                        text === '›' ||
+                        text === '→' ||
+                        text === '»' ||
+                        ariaLabel.toLowerCase().includes('next') ||
+                        text === String(currentPage + 1);
+                    
+                    if (isNext && href && href.trim()) {
+                        candidate = href;
+                        return false;
+                    }
+                });
+            });
+        }
+    }
+    
+    // Strategy 3: Look for URL with ?page= or &page= parameter (next page number)
+    if (!candidate) {
+        $$('a[href]').each((_, el) => {
+            if (candidate) return false;
+            const href = $$(el).attr('href');
+            
+            if (href && (href.includes('?page=') || href.includes('&page='))) {
+                const match = href.match(/[?&]page=(\d+)/);
+                if (match && parseInt(match[1]) === currentPage + 1) {
+                    candidate = href;
+                    return false;
+                }
+            }
+        });
+    }
+    
+    // Strategy 4: Build next page URL manually
+    // Clutch.co format: /directory/[category]?page=X
     if (!candidate) {
         try {
             const parsed = new URL(currentUrl);
-            const currentPageParam = parseInt(parsed.searchParams.get('page') || '1');
-            if (currentPageParam === currentPage) {
+            const currentPageParam = parsed.searchParams.get('page');
+            
+            // If no page param, we're on page 1
+            if (!currentPageParam && currentPage === 1) {
+                parsed.searchParams.set('page', '2');
+                candidate = parsed.href;
+            }
+            // If page param exists and matches current page, increment it
+            else if (currentPageParam && parseInt(currentPageParam) === currentPage) {
                 parsed.searchParams.set('page', String(currentPage + 1));
                 candidate = parsed.href;
             }
         } catch {
-            return null;
+            // URL parsing failed, try simple parameter append
+            if (!currentUrl.includes('?')) {
+                candidate = `${currentUrl}?page=${currentPage + 1}`;
+            } else if (currentUrl.includes('?page=')) {
+                candidate = currentUrl.replace(/page=\d+/, `page=${currentPage + 1}`);
+            } else {
+                candidate = `${currentUrl}&page=${currentPage + 1}`;
+            }
         }
     }
     
@@ -415,7 +443,10 @@ const buildStartUrls = ({ startUrls, startUrl, url, category, location }) => {
     if (startUrl) urls.push(startUrl);
     if (url) urls.push(url);
     if (!urls.length) {
-        const slug = category ? `/${String(category).trim().replace(/^\/+|\/+$/g, '')}` : '/agencies';
+        // Fixed: Use /directory/ path format (actual Clutch.co structure)
+        const slug = category 
+            ? `/directory/${String(category).trim().replace(/^\/+|\/+$/g, '')}` 
+            : '/directory';
         const built = new URL(`${BASE_URL}${slug}`);
         if (location) built.searchParams.set('location', String(location).trim());
         urls.push(built.href);
