@@ -10,19 +10,6 @@
       "description": "Start scraping from a specific Clutch.co search URL. If provided, this will be used instead of Category/Location.",
       "editor": "textfield"
     },
-    "category": {
-      "title": "Category (if not using Start URL)",
-      "type": "string",
-      "description": "Agency category, e.g., 'advertising', 'web-development', 'marketing'.",
-      "editor": "textfield",
-      "prefill": "advertising"
-    },
-    "location": {
-      "title": "Location (if not using Start URL)",
-      "type": "string",
-      "description": "Location to filter agencies, e.g., 'Toronto', 'New York'.",
-      "editor": "textfield"
-    },
     "collectDetails": {
       "title": "Collect agency details",
       "type": "boolean",
