@@ -61,6 +61,28 @@ const canonicalizeProfileUrl = (href) => {
     }
 };
 
+const slugifyForDirectory = (value) => {
+    if (!value) return null;
+    const slug = String(value).trim().toLowerCase();
+    if (!slug) return null;
+    return slug
+        .replace(/&/g, 'and')
+        .replace(/['"]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-+|-+$)/g, '');
+};
+
+const buildDirectoryUrlForSlug = (slug, location) => {
+    if (!slug) return null;
+    try {
+        const url = new URL(`${BASE_URL}/directory/${slug}`);
+        if (location) url.searchParams.set('location', String(location).trim());
+        return url.href;
+    } catch {
+        return null;
+    }
+};
+
 const cleanText = (html) => {
     if (!html) return '';
     const $ = cheerioLoad(html);
@@ -491,7 +513,7 @@ const buildNextPageUrl = ($$, currentUrl, currentPage = 1) => {
     return absolute && absolute !== currentUrl ? absolute : null;
 };
 
-const buildStartUrls = ({ startUrls, startUrl, url, category, location }) => {
+const buildStartUrls = ({ startUrls, startUrl, url, category, location, keywords, directoryUrls }) => {
     const urls = [];
     if (Array.isArray(startUrls)) {
         for (const entry of startUrls) {
@@ -501,15 +523,33 @@ const buildStartUrls = ({ startUrls, startUrl, url, category, location }) => {
     }
     if (startUrl) urls.push(startUrl);
     if (url) urls.push(url);
+
+    const slugSet = new Set();
+    const addSlug = (value) => {
+        const slug = slugifyForDirectory(value);
+        if (slug) slugSet.add(slug);
+    };
+    addSlug(category);
+    const keywordEntries = Array.isArray(keywords) ? keywords : keywords ? [keywords] : [];
+    keywordEntries.forEach(addSlug);
+
+    slugSet.forEach((slug) => {
+        const directoryUrl = buildDirectoryUrlForSlug(slug, location);
+        if (directoryUrl) urls.push(directoryUrl);
+    });
+
+    const directoryInputs = Array.isArray(directoryUrls) ? directoryUrls : directoryUrls ? [directoryUrls] : [];
+    directoryInputs.forEach((entry) => {
+        const href = typeof entry === 'string' ? entry : entry?.url;
+        if (href) urls.push(href);
+    });
+
     if (!urls.length) {
-        // Fixed: Use /directory/ path format (actual Clutch.co structure)
-        const slug = category 
-            ? `/directory/${String(category).trim().replace(/^\/+|\/+$/g, '')}` 
-            : '/directory';
-        const built = new URL(`${BASE_URL}${slug}`);
+        const built = new URL(`${BASE_URL}/directory`);
         if (location) built.searchParams.set('location', String(location).trim());
         urls.push(built.href);
     }
+
     const normalized = urls
         .map((href) => normalizeUrl(toAbs(href)))
         .filter(Boolean);
@@ -834,6 +874,8 @@ async function main() {
         startUrl,
         url,
         proxyConfiguration,
+        keywords,
+        directoryUrls,
         maxConcurrency: MAX_CONCURRENCY_RAW = 4,
         requestHandlerTimeoutSecs: REQUEST_TIMEOUT_RAW = 70,
         debugLog = false,
@@ -852,7 +894,7 @@ async function main() {
     const MAX_CONCURRENCY = Number.isFinite(+MAX_CONCURRENCY_RAW) ? Math.min(10, Math.max(1, +MAX_CONCURRENCY_RAW)) : 4;
     const REQUEST_TIMEOUT = Number.isFinite(+REQUEST_TIMEOUT_RAW) ? Math.min(180, Math.max(20, +REQUEST_TIMEOUT_RAW)) : 70;
 
-    const startPageUrls = buildStartUrls({ startUrls, startUrl, url, category, location });
+    const startPageUrls = buildStartUrls({ startUrls, startUrl, url, category, location, keywords, directoryUrls });
     if (!startPageUrls.length) {
         throw new Error('No valid start URLs resolved from input');
     }

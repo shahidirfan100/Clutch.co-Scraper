@@ -36,9 +36,21 @@
 <td>Empty</td>
 </tr>
 <tr>
+<td><code>keywords</code></td>
+<td>string | array</td>
+<td>Human-readable search keywords (e.g., "Android application developers") that are slugified into `/directory/<slug>` listing URLs automatically.</td>
+<td>Empty</td>
+</tr>
+<tr>
 <td><code>location</code></td>
 <td>string</td>
 <td>Location to filter agencies (e.g., "Toronto", "New York"). Leave empty for global results.</td>
+<td>Empty</td>
+</tr>
+<tr>
+<td><code>directoryUrls</code></td>
+<td>array</td>
+<td>Additional listing URLs (e.g., directory or search result pages) that are added to the crawl in addition to <code>startUrls</code>.</td>
 <td>Empty</td>
 </tr>
 <tr>
@@ -105,6 +117,8 @@
 </table>
 
 <p>You can also provide single <code>startUrl</code> or <code>url</code> fields (strings) for convenience; they follow the same behavior as items inside <code>startUrls</code>.</p>
+
+<p>The new <code>keywords</code> input lets you feed human-friendly category names (like "Android development") and the Actor automatically slugifies them into valid <code>/directory/...</code> URLs (location filters are appended where provided). If you already have directory/search results URLs, pass them through <code>directoryUrls</code> to seed multiple entry points without duplicating work.</p>
 
 ### Usage Example
 
