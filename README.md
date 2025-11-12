@@ -89,6 +89,18 @@
 <td>Enable verbose logging to troubleshoot blocking or parsing issues.</td>
 <td>false</td>
 </tr>
+<tr>
+<td><code>cookies</code></td>
+<td>string | array | object</td>
+<td>Optional cookie payload that will be injected into every HTTP request (useful for reusing a known <code>cf_clearance</code>).</td>
+<td>Empty</td>
+</tr>
+<tr>
+<td><code>extraHeaders</code></td>
+<td>object</td>
+<td>Key/value map of headers (e.g., <code>{"x-forwarded-for": "..."} </code>) merged into the generated stealth headers.</td>
+<td>Empty</td>
+</tr>
 </tbody>
 </table>
 
@@ -290,6 +302,7 @@
 
 <ul>
 <li><strong>Limits and Performance</strong>: Concurrency, smart delays, and autoscaled session pools are configurable so you can tune speed vs. stealth.</li>
+<li><strong>JS Rendering Assist</strong>: Inline hydration data is evaluated through <code>jsdom</code> plus <code>got-scraping</code>/<code>header-generator</code> so we mimic a modern browser without launching a heavyweight headless browser.</li>
 <li><strong>Proxy Strategy</strong>: Residential or high-quality datacenter proxies are strongly recommended; the actor falls back to direct connections but blocking is likely.</li>
 <li><strong>Logging</strong>: Enable <code>debugLog</code> to inspect pagination, session health, and blocking diagnostics right in the Apify console.</li>
 <li><strong>Data Freshness</strong>: Results reflect the current state of Clutch.co listings at the time of scraping.</li>

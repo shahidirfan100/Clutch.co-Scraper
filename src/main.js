@@ -2,6 +2,7 @@ import { Actor, log } from 'apify';
 import { CheerioCrawler, Dataset } from 'crawlee';
 import { load as cheerioLoad } from 'cheerio';
 import { HeaderGenerator } from 'header-generator';
+import { JSDOM } from 'jsdom';
 
 await Actor.init();
 
@@ -9,8 +10,8 @@ const BASE_URL = 'https://clutch.co';
 
 const headerGenerator = new HeaderGenerator({
     browsers: [
-        { name: 'chrome', minVersion: 118, maxVersion: 127 },
-        { name: 'edge', minVersion: 118, maxVersion: 126 },
+        { name: 'chrome', minVersion: 118, maxVersion: 129 },
+        { name: 'edge', minVersion: 118, maxVersion: 128 },
     ],
     devices: ['desktop', 'mobile'],
     operatingSystems: ['windows', 'macos'],
@@ -59,7 +60,7 @@ const extractJsonLdScripts = ($$) => {
             const parsed = JSON.parse(raw);
             blocks.push(parsed);
         } catch {
-            // Ignore invalid JSON-LD fragments
+            // ignore invalid JSON-LD fragments
         }
     });
     return blocks;
@@ -246,7 +247,7 @@ const collectContactInfo = ($$) => {
         $$('a[href]').each((_, el) => {
             if (link) return;
             const text = $$(el).text().trim().toLowerCase();
-            if (/website/.test(text)) link = $$(el).attr('href');
+            if (/website|visit/i.test(text)) link = $$(el).attr('href');
         });
         if (!link) link = $$('a[href^="http"]').first().attr('href');
         return link ? toAbs(link) || link : null;
@@ -355,6 +356,111 @@ const buildStartUrls = ({ startUrls, startUrl, url, category, location }) => {
     return [...new Set(normalized)];
 };
 
+const collectProfileLinksFromState = (node, links, seen = new Set()) => {
+    if (node === null || node === undefined) return;
+    if (typeof node === 'string') {
+        if (node.includes('/profile/')) {
+            const absolute = toAbs(node);
+            if (absolute) links.add(absolute);
+        }
+        return;
+    }
+    if (typeof node !== 'object') return;
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+        node.forEach((entry) => collectProfileLinksFromState(entry, links, seen));
+        return;
+    }
+    Object.values(node).forEach((value) => collectProfileLinksFromState(value, links, seen));
+};
+
+const STATE_PATTERNS = [
+    /window\.__NUXT__\s*=\s*(\{[\s\S]*?\});/g,
+    /window\.__NEXT_DATA__\s*=\s*(\{[\s\S]*?\});/g,
+    /window\.__APOLLO_STATE__\s*=\s*(\{[\s\S]*?\});/g,
+    /window\.__CLUTCH_STATE__\s*=\s*(\{[\s\S]*?\});/g,
+];
+
+const evaluateStatePayload = (payload) => {
+    if (!payload) return null;
+    try {
+        return JSON.parse(payload);
+    } catch {
+        try {
+            const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' });
+            dom.window.eval(`window.__STATE__ = ${payload}`);
+            const state = dom.window.__STATE__;
+            dom.window.close?.();
+            return state;
+        } catch {
+            return null;
+        }
+    }
+};
+
+const extractEmbeddedState = (html) => {
+    const states = [];
+    const links = new Set();
+    if (!html) return { states, profileLinks: [] };
+
+    for (const pattern of STATE_PATTERNS) {
+        pattern.lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(html)) !== null) {
+            const payload = match[1];
+            const parsed = evaluateStatePayload(payload);
+            if (parsed && typeof parsed === 'object') {
+                states.push(parsed);
+                collectProfileLinksFromState(parsed, links);
+            }
+        }
+    }
+    return { states, profileLinks: [...links] };
+};
+
+const findOrganizationFromState = (states) => {
+    const seen = new Set();
+    const walk = (node) => {
+        if (!node || typeof node !== 'object' || seen.has(node)) return null;
+        seen.add(node);
+        if (node.slug && typeof node.slug === 'string' && node.slug.includes('/profile/')) {
+            return node;
+        }
+        if (node.profileUrl || node.website || node.name) {
+            const candidateSlug = node.profileUrl || node.url || node.website;
+            if (typeof candidateSlug === 'string' && candidateSlug.includes('/profile/')) {
+                return node;
+            }
+        }
+        for (const value of Object.values(node)) {
+            if (value && typeof value === 'object') {
+                const found = walk(value);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
+    for (const state of states) {
+        const found = walk(state);
+        if (found) return found;
+    }
+    return null;
+};
+
+const parseCookiesInput = (cookies) => {
+    if (!cookies) return null;
+    if (Array.isArray(cookies)) return cookies.filter(Boolean).join('; ');
+    if (typeof cookies === 'object') {
+        return Object.entries(cookies)
+            .filter(([, value]) => value !== undefined && value !== null)
+            .map(([key, value]) => `${key}=${value}`)
+            .join('; ');
+    }
+    return String(cookies);
+};
+
 const buildProxyConfiguration = async (proxyConfiguration) => {
     const config = proxyConfiguration && Object.keys(proxyConfiguration).length
         ? proxyConfiguration
@@ -376,17 +482,40 @@ const createListRequest = (url, pageNo = 1, referer = BASE_URL) => ({
     userData: { label: 'LIST', pageNo, referer },
 });
 
-const extractDetailItem = ($, organization, request, meta) => {
-    const bodyText = cleanText($.html());
+const enrichWithState = (item, stateOrganization) => {
+    if (!stateOrganization) return item;
+    const clone = { ...item };
+    if (!clone.website && typeof stateOrganization.website === 'string') clone.website = stateOrganization.website;
+    if (!clone.phone && typeof stateOrganization.phone === 'string') clone.phone = stateOrganization.phone;
+    if (!clone.email && typeof stateOrganization.email === 'string') clone.email = stateOrganization.email;
+    if (!clone.min_budget && stateOrganization.minBudget) clone.min_budget = stateOrganization.minBudget;
+    if (!clone.hourly_rate && stateOrganization.hourlyRate) clone.hourly_rate = stateOrganization.hourlyRate;
+    if (!clone.company_size && stateOrganization.companySize) clone.company_size = stateOrganization.companySize;
+    if (!clone.services && Array.isArray(stateOrganization.services)) clone.services = stateOrganization.services;
+    if (!clone.industries && Array.isArray(stateOrganization.industries)) clone.industries = stateOrganization.industries;
+    if (!clone.awards && Array.isArray(stateOrganization.awards)) clone.awards = stateOrganization.awards;
+    if (!clone.description && typeof stateOrganization.description === 'string') clone.description = stateOrganization.description;
+    return clone;
+};
+
+const extractDetailItem = ($, organization, stateOrganization, request, meta, html) => {
+    const bodyText = $('body').text() || cleanText(html);
     const name = organization?.name
+        ?? stateOrganization?.name
         ?? $('[data-test="profile-name"]').first().text().trim()
         ?? $('h1').first().text().trim()
         ?? null;
     if (!name) return null;
 
     const ratingText = $('[class*="rating"]').first().text().trim();
-    const ratingValue = parseNumber(organization?.aggregateRating?.ratingValue ?? ratingText.match(/(\d+(\.\d+)?)/)?.[1]);
-    const reviewText = $('[data-test="review-count"]').first().text().trim() || bodyText.match(/([0-9,]+)\s+reviews?/i)?.[1];
+    const ratingValue = parseNumber(
+        organization?.aggregateRating?.ratingValue
+        ?? stateOrganization?.rating
+        ?? ratingText.match(/(\d+(\.\d+)?)/)?.[1],
+    );
+    const reviewText = $('[data-test="review-count"]').first().text().trim()
+        || stateOrganization?.reviewCount
+        || bodyText.match(/([0-9,]+)\s+reviews?/i)?.[1];
     const reviewCount = parseInteger(organization?.aggregateRating?.reviewCount ?? reviewText);
     const contacts = collectContactInfo($);
     const services = extractServicesFromPage($);
@@ -397,43 +526,47 @@ const extractDetailItem = ($, organization, request, meta) => {
 
     const description = $('[data-test="about-text"]').text().trim()
         || $('#about').text().trim()
+        || stateOrganization?.description
         || bodyText.slice(0, 600);
 
     const minBudget = $('[data-test="minimum-project-size"]').text().trim()
         || organization?.priceRange
+        || stateOrganization?.minBudget
         || bodyText.match(/Min(?:imum)? project size:?([^$]+)/i)?.[1]?.trim()
         || null;
 
     const hourlyRate = $('[data-test="avg-hourly-rate"]').text().trim()
+        || stateOrganization?.hourlyRate
         || bodyText.match(/Hourly rate:?([^\n]+)/i)?.[1]?.trim()
         || null;
 
     const companySize = $('[data-test="employees"]').text().trim()
         || organization?.numberOfEmployees
+        || stateOrganization?.companySize
         || bodyText.match(/Employees:?([^\n]+)/i)?.[1]?.trim()
         || null;
 
-    return {
+    const item = enrichWithState({
         name,
         url: request.url,
         slug: request.url.split('/profile/').pop() || null,
         rating: ratingValue,
         review_count: reviewCount,
-        verified: $('[class*="verified"]').first().text().trim() || null,
+        verified: $('[class*="verified"]').first().text().trim() || stateOrganization?.verification || null,
         min_budget: minBudget,
         hourly_rate: hourlyRate,
         company_size: companySize,
-        primary_location: organization?.address?.addressLocality || locations[0] || null,
-        locations: locations.length ? locations : null,
+        primary_location: organization?.address?.addressLocality || locations[0] || stateOrganization?.primaryLocation || null,
+        locations: locations.length ? locations : stateOrganization?.locations || null,
         services: services.length ? services : null,
         industries: industries.length ? industries : null,
         awards: awards.length ? awards : null,
         testimonials: testimonials.length ? testimonials : null,
         description: description || null,
-        website: contacts.website || organization?.url || null,
-        phone: contacts.phone || organization?.telephone || null,
-        email: contacts.email || null,
-        address: formatAddress(organization?.address),
+        website: contacts.website || organization?.url || stateOrganization?.website || null,
+        phone: contacts.phone || organization?.telephone || stateOrganization?.phone || null,
+        email: contacts.email || stateOrganization?.email || null,
+        address: formatAddress(organization?.address) || stateOrganization?.address || null,
         json_ld: organization || null,
         category_filter: meta.category || null,
         location_filter: meta.location || null,
@@ -442,7 +575,9 @@ const extractDetailItem = ($, organization, request, meta) => {
             referer: meta.referer || null,
             detail_body_length: bodyText.length,
         },
-    };
+    }, stateOrganization);
+
+    return item;
 };
 
 async function main() {
@@ -458,8 +593,10 @@ async function main() {
         url,
         proxyConfiguration,
         maxConcurrency: MAX_CONCURRENCY_RAW = 4,
-        requestHandlerTimeoutSecs: REQUEST_TIMEOUT_RAW = 60,
+        requestHandlerTimeoutSecs: REQUEST_TIMEOUT_RAW = 70,
         debugLog = false,
+        cookies,
+        extraHeaders = {},
     } = input;
 
     if (typeof category !== 'string' || typeof location !== 'string') {
@@ -471,16 +608,17 @@ async function main() {
     const RESULTS_WANTED = Number.isFinite(+RESULTS_WANTED_RAW) ? Math.max(1, +RESULTS_WANTED_RAW) : Number.MAX_SAFE_INTEGER;
     const MAX_PAGES = Number.isFinite(+MAX_PAGES_RAW) ? Math.max(1, +MAX_PAGES_RAW) : 25;
     const MAX_CONCURRENCY = Number.isFinite(+MAX_CONCURRENCY_RAW) ? Math.min(10, Math.max(1, +MAX_CONCURRENCY_RAW)) : 4;
-    const REQUEST_TIMEOUT = Number.isFinite(+REQUEST_TIMEOUT_RAW) ? Math.min(120, Math.max(20, +REQUEST_TIMEOUT_RAW)) : 60;
+    const REQUEST_TIMEOUT = Number.isFinite(+REQUEST_TIMEOUT_RAW) ? Math.min(180, Math.max(20, +REQUEST_TIMEOUT_RAW)) : 70;
 
     const startPageUrls = buildStartUrls({ startUrls, startUrl, url, category, location });
     if (!startPageUrls.length) {
         throw new Error('No valid start URLs resolved from input');
     }
 
-    log.info(`Starting Clutch.co scraper with ${startPageUrls.length} start URL(s), max pages ${MAX_PAGES}, target ${RESULTS_WANTED}.`);
-
+    const cookieHeader = parseCookiesInput(cookies);
     const proxyConf = await buildProxyConfiguration(proxyConfiguration);
+
+    log.info(`Starting Clutch.co Cheerio scraper with ${startPageUrls.length} start URL(s), max pages ${MAX_PAGES}, target ${RESULTS_WANTED}.`);
 
     const state = { saved: 0, listPages: 0, detailPages: 0, blocked: 0 };
     const updateStatus = () => Actor.setStatusMessage(`saved ${state.saved}/${RESULTS_WANTED} | list ${state.listPages} | detail ${state.detailPages} | blocked ${state.blocked}`);
@@ -506,26 +644,46 @@ async function main() {
             },
         },
         preNavigationHooks: [
-            async ({ request }, gotOptions) => {
-                const headers = headerGenerator.getHeaders({
-                    browsers: [{ name: 'chrome', minVersion: 118, maxVersion: 127 }],
+            async ({ request, session }, requestAsBrowserOptions) => {
+                const generatedHeaders = headerGenerator.getHeaders({
+                    browsers: [{ name: 'chrome', minVersion: 118, maxVersion: 129 }],
                     devices: Math.random() > 0.4 ? ['desktop'] : ['mobile'],
                     operatingSystems: ['windows', 'macos'],
                 });
-                const referer = request.userData?.referer || 'https://www.google.com/search?q=clutch+agencies';
-                const delay = 350 + Math.floor(Math.random() * 600);
-                await sleep(delay);
-
-                gotOptions.headers = {
-                    ...gotOptions.headers,
-                    ...headers,
-                    'accept-language': headers['accept-language'] || 'en-US,en;q=0.9',
-                    referer,
+                const baseHeaders = {
+                    ...generatedHeaders,
+                    ...extraHeaders,
+                    'accept-language': extraHeaders['accept-language'] || 'en-US,en;q=0.9',
+                    referer: request.userData?.referer || 'https://www.google.com/',
                     'upgrade-insecure-requests': '1',
                     'sec-fetch-site': 'same-origin',
                     'sec-fetch-mode': 'navigate',
                     'sec-fetch-dest': 'document',
                 };
+                if (cookieHeader && !baseHeaders.cookie) baseHeaders.cookie = cookieHeader;
+
+                const sessionCookies = session?.getCookieString(request.url);
+                if (sessionCookies?.length) {
+                    baseHeaders.cookie = baseHeaders.cookie
+                        ? `${sessionCookies.join('; ')}; ${baseHeaders.cookie}`
+                        : sessionCookies.join('; ');
+                }
+
+                requestAsBrowserOptions.headers = baseHeaders;
+                requestAsBrowserOptions.useHeaderGenerator = false;
+
+                const delay = 300 + Math.floor(Math.random() * 600);
+                await sleep(delay);
+            },
+        ],
+        postNavigationHooks: [
+            async ({ response, session }) => {
+                const statusCode = response?.statusCode ?? 0;
+                if (statusCode >= 400) {
+                    session?.markBad?.();
+                } else {
+                    session?.markGood?.();
+                }
             },
         ],
         failedRequestHandler: async ({ request, error }) => {
@@ -534,10 +692,24 @@ async function main() {
             await updateStatus();
         },
         async requestHandler(context) {
-            const { request, $, response, session, enqueueLinks, crawler: crawlerInstance } = context;
+            const {
+                request,
+                $,
+                body,
+                response,
+                session,
+                enqueueLinks,
+                crawler: crawlerInstance,
+            } = context;
             const label = request.userData?.label || 'LIST';
             const pageNo = request.userData?.pageNo || 1;
             const statusCode = response?.statusCode ?? 0;
+
+            const html = typeof body === 'string'
+                ? body
+                : Buffer.isBuffer(body)
+                    ? body.toString('utf8')
+                    : $.html() || '';
 
             if (statusCode === 403 || statusCode === 429) {
                 state.blocked += 1;
@@ -550,11 +722,11 @@ async function main() {
                 throw new Error(`Empty body for ${request.url}`);
             }
 
+            const embeddedState = extractEmbeddedState(html);
+
             const normalizedUrl = normalizeUrl(request.url);
-            if (label === 'LIST' && normalizedUrl && seenListPages.has(normalizedUrl)) {
-                return;
-            }
             if (label === 'LIST' && normalizedUrl) {
+                if (seenListPages.has(normalizedUrl)) return;
                 seenListPages.add(normalizedUrl);
             }
 
@@ -571,7 +743,8 @@ async function main() {
                 const jsonLdBlocks = extractJsonLdScripts($);
                 const jsonLdLinks = extractProfileLinksFromJsonLd(jsonLdBlocks, request.url);
                 const domLinks = findAgencyLinks($, request.url);
-                const candidates = [...new Set([...jsonLdLinks, ...domLinks])];
+                const stateLinks = embeddedState.profileLinks || [];
+                const candidates = [...new Set([...jsonLdLinks, ...domLinks, ...stateLinks])];
                 const remaining = Math.max(RESULTS_WANTED - state.saved, 0);
 
                 log.debug(`LIST ${request.url} page ${pageNo} -> ${candidates.length} candidates, remaining ${remaining}`);
@@ -581,16 +754,16 @@ async function main() {
                         const toEnqueue = filterNewLinks(candidates, seenDetailLinks, remaining);
                         if (toEnqueue.length) {
                             await enqueueLinks({
-                                requests: toEnqueue.map((url) => ({
-                                    url,
+                                requests: toEnqueue.map((link) => ({
+                                    url: link,
                                     userData: { label: 'DETAIL', referer: request.url },
                                 })),
                             });
                             log.info(`Enqueued ${toEnqueue.length} detail pages from ${request.url}`);
                         }
                     } else {
-                        const toPush = filterNewLinks(candidates, seenBasicLinks, remaining).map((url) => ({
-                            url,
+                        const toPush = filterNewLinks(candidates, seenBasicLinks, remaining).map((link) => ({
+                            url: link,
                             category_filter: category || null,
                             location_filter: location || null,
                             fetched_at: nowIso(),
@@ -602,6 +775,11 @@ async function main() {
                             log.info(`Stored ${toPush.length} basic items (no detail crawl).`);
                         }
                     }
+                }
+
+                if (state.saved >= RESULTS_WANTED) {
+                    await crawlerInstance.autoscaledPool?.abort();
+                    return;
                 }
 
                 if (pageNo < MAX_PAGES) {
@@ -620,6 +798,7 @@ async function main() {
                 } else {
                     log.info(`Reached max_pages limit (${MAX_PAGES}) at ${request.url}`);
                 }
+
                 return;
             }
 
@@ -634,11 +813,12 @@ async function main() {
 
                 const jsonLdBlocks = extractJsonLdScripts($);
                 const organization = extractOrganizationFromJsonLd(jsonLdBlocks);
-                const item = extractDetailItem($, organization, request, {
+                const stateOrganization = findOrganizationFromState(embeddedState.states);
+                const item = extractDetailItem($, organization, stateOrganization, request, {
                     category,
                     location,
                     referer: request.userData?.referer,
-                });
+                }, html);
 
                 if (!item) {
                     session?.markBad?.();
@@ -657,7 +837,7 @@ async function main() {
         },
     });
 
-    const initialRequests = startPageUrls.map((url) => createListRequest(url));
+    const initialRequests = startPageUrls.map((link) => createListRequest(link));
     await crawler.run(initialRequests);
     log.info(`Finished scraping run. Saved ${state.saved} agencies (list pages ${state.listPages}, detail pages ${state.detailPages}, blocked ${state.blocked}).`);
     await updateStatus();
