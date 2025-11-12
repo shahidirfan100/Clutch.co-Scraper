@@ -279,14 +279,27 @@ const filterNewLinks = (links, seenSet, limit = Infinity) => {
 
 const findAgencyLinks = ($$, base) => {
     const links = new Set();
+    
+    // Updated selectors for Clutch.co's current structure (Nov 2025)
     const selectors = [
-        'a[href*="/profile/"]',
-        'h3 a[href*="/profile/"]',
-        '.provider-row a[href*="/profile/"]',
-        '.provider-card a[href*="/profile/"]',
+        // Profile links in list items
+        'li a[href*="/profile/"]',
+        'article a[href*="/profile/"]',
+        // Company name links
         '.company-name a[href*="/profile/"]',
-        '.directory-listing a[href*="/profile/"]',
+        '.company_title a[href*="/profile/"]',
+        // Directory/provider listings
+        '.directory-provider a[href*="/profile/"]',
+        '.provider-info a[href*="/profile/"]',
+        '.provider a[href*="/profile/"]',
+        // Header/title links
+        'h3 > a[href*="/profile/"]',
+        'h2 > a[href*="/profile/"]',
+        'h4 > a[href*="/profile/"]',
+        // General profile links (fallback)
+        'a[href^="/profile/"]',
     ];
+    
     selectors.forEach((selector) => {
         $$(selector).each((_, el) => {
             const href = $$(el).attr('href');
@@ -295,41 +308,98 @@ const findAgencyLinks = ($$, base) => {
             if (abs) links.add(abs);
         });
     });
+    
+    // Fallback: find all links containing '/profile/' if none found
+    if (links.size === 0) {
+        $$('a[href]').each((_, el) => {
+            const href = $$(el).attr('href');
+            if (href && href.includes('/profile/')) {
+                const abs = toAbs(href, base);
+                if (abs) links.add(abs);
+            }
+        });
+    }
+    
     return [...links];
 };
 
 const buildNextPageUrl = ($$, currentUrl, currentPage = 1) => {
+    // Updated pagination selectors for Clutch.co (Nov 2025)
     const selectors = [
+        // Standard pagination
         'a[rel="next"]',
+        'a[aria-label="Next"]',
+        'a[aria-label="Go to next page"]',
+        // Pagination containers
+        '.pagination a[href]:not(.disabled)',
+        '.pager a[href]',
         '.pager-next a[href]',
-        '.pagination a[href]',
+        'nav a[href]',
+        // Button/link classes
         'a.next',
+        'button[type="button"] + a[href]',
+        // Page parameter links
         'a[href*="?page="]',
         'a[href*="&page="]',
     ];
+    
     let candidate = null;
-    selectors.every((selector) => {
+    
+    // Try to find explicit "next" link
+    for (const selector of selectors) {
+        if (candidate) break;
         $$(selector).each((_, el) => {
-            if (candidate) return;
+            if (candidate) return false; // stop iteration
             const href = $$(el).attr('href');
             if (!href) return;
+            
             const text = $$(el).text().trim().toLowerCase();
-            const looksLikeNext = /(next|more)/.test(text)
-                || href.includes(`page=${currentPage + 1}`)
-                || href.includes('?page=');
-            if (looksLikeNext) candidate = href;
+            const ariaLabel = $$(el).attr('aria-label')?.toLowerCase() || '';
+            
+            const looksLikeNext = 
+                text.includes('next') ||
+                text.includes('›') ||
+                text.includes('→') ||
+                ariaLabel.includes('next') ||
+                href.includes(`page=${currentPage + 1}`) ||
+                (href.includes('?page=') && parseInt(href.match(/page=(\d+)/)?.[1]) > currentPage);
+            
+            if (looksLikeNext) {
+                candidate = href;
+                return false; // stop iteration
+            }
         });
-        return !candidate;
-    });
+    }
+    
+    // Fallback: look for numbered page links (current page + 1)
+    if (!candidate) {
+        $$('a[href]').each((_, el) => {
+            if (candidate) return false;
+            const href = $$(el).attr('href');
+            const text = $$(el).text().trim();
+            
+            // Check if it's the next page number
+            if (text === String(currentPage + 1) && href.includes('page=')) {
+                candidate = href;
+                return false;
+            }
+        });
+    }
+    
+    // Last resort: build URL with page parameter
     if (!candidate) {
         try {
             const parsed = new URL(currentUrl);
-            parsed.searchParams.set('page', String(currentPage + 1));
-            candidate = parsed.href;
+            const currentPageParam = parseInt(parsed.searchParams.get('page') || '1');
+            if (currentPageParam === currentPage) {
+                parsed.searchParams.set('page', String(currentPage + 1));
+                candidate = parsed.href;
+            }
         } catch {
             return null;
         }
     }
+    
     const absolute = toAbs(candidate, currentUrl);
     return absolute && absolute !== currentUrl ? absolute : null;
 };
@@ -739,7 +809,7 @@ async function main() {
                 const candidates = [...new Set([...jsonLdLinks, ...domLinks, ...stateLinks])];
                 const remaining = Math.max(RESULTS_WANTED - state.saved, 0);
 
-                log.debug(`LIST ${request.url} page ${pageNo} -> ${candidates.length} candidates, remaining ${remaining}`);
+                log.info(`LIST ${request.url} page ${pageNo} -> Found: ${domLinks.length} DOM, ${jsonLdLinks.length} JSON-LD, ${stateLinks.length} state = ${candidates.length} total candidates, remaining ${remaining}`);
 
                 if (remaining > 0) {
                     if (collectDetails) {
@@ -781,13 +851,15 @@ async function main() {
                                 urls: [nextUrl],
                                 userData: { label: 'LIST', pageNo: pageNo + 1, referer: request.url },
                             });
-                            log.debug(`Enqueued next listing page ${nextUrl}`);
+                            log.info(`✓ Enqueued next page ${pageNo + 1}: ${nextUrl}`);
+                        } else {
+                            log.info(`✗ Next page ${pageNo + 1} already seen: ${normalizedNext}`);
                         }
                     } else {
-                        log.debug(`No next page found for ${request.url}`);
+                        log.info(`✗ No next page found for page ${pageNo} at ${request.url}`);
                     }
                 } else {
-                    log.info(`Reached max_pages limit (${MAX_PAGES}) at ${request.url}`);
+                    log.info(`✗ Reached max_pages limit (${MAX_PAGES}) at page ${pageNo}`);
                 }
 
                 return;
