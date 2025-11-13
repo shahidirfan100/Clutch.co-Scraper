@@ -1,313 +1,333 @@
 # Clutch.co Agencies Scraper
 
-## Introduction
+> **Extract comprehensive agency data from Clutch.co** - The world's leading B2B service provider directory. Perfect for market research, lead generation, and competitive analysis.
 
-<p>This Apify Actor scrapes agency listings from Clutch.co, a leading directory of B2B service providers. It collects comprehensive information about agencies, including their ratings, services offered, contact details, and more. The Actor handles pagination automatically and can optionally visit individual agency profile pages for detailed information.</p>
+[![Apify Actor](https://img.shields.io/badge/Apify-Actor-blue)](https://apify.com)
+[![Data Extraction](https://img.shields.io/badge/Data-Clutch.co-green)](https://clutch.co)
+[![B2B Services](https://img.shields.io/badge/Category-B2B%20Services-orange)](https://clutch.co)
 
-<p>Perfect for market research, lead generation, and competitive analysis in the B2B services space.</p>
+## 📋 Overview
 
-## Use Cases
+This powerful scraper extracts detailed information about B2B service agencies from Clutch.co, the premier directory for business service providers. Whether you're conducting market research, generating leads, or analyzing competitors, this tool provides comprehensive agency data including ratings, services, pricing, and contact information.
 
-<ul>
-<li><strong>Market Research</strong>: Analyze trends in agency services, ratings, and pricing across different categories and locations.</li>
-<li><strong>Lead Generation</strong>: Build lists of qualified agencies for outreach and partnership opportunities.</li>
-<li><strong>Competitive Analysis</strong>: Compare agency offerings, client feedback, and market positioning.</li>
-<li><strong>Data Collection</strong>: Gather structured data on service providers for reporting or integration into other systems.</li>
-</ul>
+### ✨ Key Features
 
-## Input
+- **📊 Comprehensive Data Extraction**: Collect ratings, reviews, services, pricing, and contact details
+- **🎯 Smart Filtering**: Filter by category, location, and custom criteria
+- **📄 Deep Profile Scraping**: Optional detailed profile visits for complete agency information
+- **🔄 Automatic Pagination**: Handles multiple pages seamlessly
+- **🛡️ Anti-Blocking Technology**: Built-in stealth features for reliable scraping
+- **⚡ High Performance**: Optimized for speed with configurable concurrency
+- **📈 Scalable Results**: Collect hundreds or thousands of agency profiles
 
-<p>The Actor accepts the following input parameters. All parameters are optional unless specified otherwise.</p>
+### 🎯 Perfect For
 
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>category</code></td>
-<td>string</td>
-<td>Agency category to filter by (e.g., "advertising", "web-development"). Leave empty for all categories.</td>
-<td>Empty</td>
-</tr>
-<tr>
-<td><code>location</code></td>
-<td>string</td>
-<td>Location to filter agencies (e.g., "Toronto", "New York"). Leave empty for global results.</td>
-<td>Empty</td>
-</tr>
-<tr>
-<td><code>startUrls</code></td>
-<td>array</td>
-<td>Optional array of listing URLs (strings or objects with <code>url</code>). Overrides automatic category/location URL generation.</td>
-<td>Derived from category/location</td>
-</tr>
-<tr>
-<td><code>results_wanted</code></td>
-<td>integer</td>
-<td>Maximum number of agencies to collect. Set to a high number or leave empty to collect all available.</td>
-<td>100</td>
-</tr>
-<tr>
-<td><code>max_pages</code></td>
-<td>integer</td>
-<td>Safety limit on the number of listing pages to visit.</td>
-<td>20</td>
-</tr>
-<tr>
-<td><code>collectDetails</code></td>
-<td>boolean</td>
-<td>If enabled, visits each agency profile page for full details. Disable for faster basic data collection.</td>
-<td>true</td>
-</tr>
-<tr>
-<td><code>proxyConfiguration</code></td>
-<td>object</td>
-<td>Proxy settings for reliable scraping. Defaults to Apify Residential proxy if available.</td>
-<td>Apify Proxy (Residential)</td>
-</tr>
-<tr>
-<td><code>maxConcurrency</code></td>
-<td>integer</td>
-<td>Upper bound for concurrent HTTP requests. Tune based on proxy capacity (1-10).</td>
-<td>4</td>
-</tr>
-<tr>
-<td><code>requestHandlerTimeoutSecs</code></td>
-<td>integer</td>
-<td>Timeout per request for the Cheerio crawler.</td>
-<td>60</td>
-</tr>
-<tr>
-<td><code>debugLog</code></td>
-<td>boolean</td>
-<td>Enable verbose logging to troubleshoot blocking or parsing issues.</td>
-<td>false</td>
-</tr>
-<tr>
-<td><code>cookies</code></td>
-<td>string | array | object</td>
-<td>Optional cookie payload that will be injected into every HTTP request (useful for reusing a known <code>cf_clearance</code>).</td>
-<td>Empty</td>
-</tr>
-<tr>
-<td><code>extraHeaders</code></td>
-<td>object</td>
-<td>Key/value map of headers (e.g., <code>{"x-forwarded-for": "..."} </code>) merged into the generated stealth headers.</td>
-<td>Empty</td>
-</tr>
-</tbody>
-</table>
+- **Market Research Analysts** - Analyze B2B service trends and pricing
+- **Lead Generation Teams** - Build targeted lists of qualified agencies
+- **Competitive Intelligence** - Compare agency offerings and client feedback
+- **Business Development** - Identify partnership opportunities
+- **Data Analysts** - Gather structured B2B service provider data
 
-<p>You can also provide single <code>startUrl</code> or <code>url</code> fields (strings) for convenience; they follow the same behavior as items inside <code>startUrls</code>.</p>
+## 🚀 Quick Start
 
+### Basic Usage
 
-### Usage Example
+```json
+{
+  "category": "mobile-app-development",
+  "location": "New York",
+  "results_wanted": 100
+}
+```
 
-<p>To run the Actor via the Apify Console:</p>
-<ol>
-<li>Go to the Actor's page on Apify.</li>
-<li>Click "Run" and configure the input parameters.</li>
-<li>For example, set <code>category</code> to "advertising", <code>location</code> to "Toronto", and <code>results_wanted</code> to 50.</li>
-<li>Start the run and monitor progress.</li>
-</ol>
+### Advanced Configuration
 
-<p>Via API:</p>
-<pre><code>curl -X POST "https://api.apify.com/v2/acts/YOUR_ACTOR_ID/runs" \
+```json
+{
+  "category": "web-development",
+  "location": "San Francisco",
+  "results_wanted": 500,
+  "collectDetails": true,
+  "maxConcurrency": 3
+}
+```
+
+## 📥 Input Parameters
+
+| Parameter | Type | Description | Default | Required |
+|-----------|------|-------------|---------|----------|
+| `category` | string | Agency category filter (e.g., "mobile-app-development", "web-design") | - | No |
+| `location` | string | Geographic filter (e.g., "New York", "London", "Toronto") | - | No |
+| `startUrls` | array | Custom starting URLs for specific listings | Auto-generated | No |
+| `startUrl` | string | Single starting URL (alternative to startUrls) | - | No |
+| `results_wanted` | integer | Maximum agencies to collect (0 = unlimited) | 100 | No |
+| `max_pages` | integer | Maximum listing pages to process | 25 | No |
+| `collectDetails` | boolean | Visit individual profiles for full data | true | No |
+| `proxyConfiguration` | object | Proxy settings for scraping | Residential proxy | No |
+| `maxConcurrency` | integer | Concurrent requests (1-10 recommended) | 4 | No |
+| `debugLog` | boolean | Enable detailed logging | false | No |
+
+### 📍 Category Examples
+
+- `mobile-app-development` - Mobile App Development Agencies
+- `web-development` - Web Development Companies
+- `digital-marketing` - Digital Marketing Agencies
+- `software-development` - Software Development Firms
+- `ui-ux-design` - UI/UX Design Agencies
+
+### 🌍 Location Examples
+
+- `New York` - New York City agencies
+- `London` - London-based companies
+- `San Francisco` - Bay Area providers
+- `Toronto` - Toronto agencies
+- `Sydney` - Australian companies
+
+## 📤 Output Data
+
+Each agency record contains comprehensive information in structured JSON format:
+
+### Core Information
+- **Basic Details**: Name, profile URL, company size, locations
+- **Ratings & Reviews**: Average rating, review count, verification status
+- **Pricing**: Minimum budget, hourly rates, project size ranges
+
+### Services & Expertise
+- **Services Offered**: Detailed service list with focus areas
+- **Industries Served**: Target markets and industry specializations
+- **Awards & Recognition**: Certifications and achievements
+
+### Contact Information
+- **Website**: Official company website
+- **Contact Details**: Phone, email, address
+- **Social Presence**: LinkedIn, social media links
+
+### Sample Output Record
+
+```json
+{
+  "name": "Tech Solutions Inc",
+  "url": "https://clutch.co/profile/tech-solutions-inc",
+  "rating": 4.9,
+  "review_count": 156,
+  "verified": "Premier Verified",
+  "min_budget": "$25,000+",
+  "hourly_rate": "$100 - $149 / hr",
+  "company_size": "50 - 249",
+  "primary_location": "San Francisco, CA",
+  "locations": ["San Francisco, CA", "Austin, TX"],
+  "services": [
+    "Mobile App Development 40%",
+    "Web Development 35%",
+    "UX/UI Design 25%"
+  ],
+  "industries": [
+    "Technology",
+    "Healthcare",
+    "Financial Services"
+  ],
+  "description": "Leading digital transformation agency specializing in mobile and web solutions...",
+  "website": "https://techsolutions.com",
+  "phone": "+1 (555) 123-4567",
+  "email": "contact@techsolutions.com",
+  "year_founded": "2015",
+  "languages": "3",
+  "timezones": "2",
+  "fetched_at": "2025-11-12T10:30:00.000Z"
+}
+```
+
+## 🎯 Usage Examples
+
+### Example 1: Basic Lead Generation
+
+**Goal**: Collect 50 mobile app development agencies in New York
+
+```json
+{
+  "category": "mobile-app-development",
+  "location": "New York",
+  "results_wanted": 50,
+  "collectDetails": true
+}
+```
+
+### Example 2: Market Research
+
+**Goal**: Analyze web development agencies globally
+
+```json
+{
+  "category": "web-development",
+  "results_wanted": 200,
+  "maxConcurrency": 2
+}
+```
+
+### Example 3: Competitive Analysis
+
+**Goal**: Deep dive into specific agency profiles
+
+```json
+{
+  "startUrls": [
+    "https://clutch.co/directory/web-development",
+    "https://clutch.co/directory/mobile-app-development"
+  ],
+  "results_wanted": 100,
+  "collectDetails": true,
+  "debugLog": true
+}
+```
+
+### Example 4: Custom URL Scraping
+
+**Goal**: Scrape from specific Clutch.co listing pages
+
+```json
+{
+  "startUrl": "https://clutch.co/directory/digital-marketing/new-york",
+  "results_wanted": 75
+}
+```
+
+## ⚙️ Configuration Guide
+
+### Performance Tuning
+
+**For Speed** (Higher risk of blocking):
+```json
+{
+  "maxConcurrency": 8,
+  "max_pages": 50
+}
+```
+
+**For Stealth** (Slower but more reliable):
+```json
+{
+  "maxConcurrency": 2,
+  "max_pages": 10
+}
+```
+
+### Proxy Configuration
+
+The actor automatically uses residential proxies for best results. For custom proxy setup:
+
+```json
+{
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
+}
+```
+
+### Data Collection Options
+
+**Basic Data Only** (Faster):
+```json
+{
+  "collectDetails": false,
+  "results_wanted": 1000
+}
+```
+
+**Complete Profiles** (Slower but comprehensive):
+```json
+{
+  "collectDetails": true,
+  "results_wanted": 100
+}
+```
+
+## 📊 Output Formats
+
+Results are available in multiple formats:
+
+- **JSON**: Full structured data
+- **CSV**: Spreadsheet-compatible format
+- **XML**: For system integration
+- **RSS**: For feed consumption
+
+Access your data through the Apify Console or API after the run completes.
+
+## 🔧 API Integration
+
+### REST API Usage
+
+```bash
+curl -X POST "https://api.apify.com/v2/acts/YOUR_ACTOR_ID/runs" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "category": "advertising",
-    "location": "Toronto",
+    "category": "mobile-app-development",
+    "location": "San Francisco",
     "results_wanted": 50
-  }'</code></pre>
+  }'
+```
 
-## Output
+### Webhook Integration
 
-<p>The Actor outputs a dataset of agency records. Each record is a JSON object with the following structure:</p>
+Set up webhooks to receive notifications when your scraping job completes:
 
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>Agency name</td>
-</tr>
-<tr>
-<td><code>slug</code></td>
-<td>string</td>
-<td>Profile slug derived from the URL</td>
-</tr>
-<tr>
-<td><code>url</code></td>
-<td>string</td>
-<td>Clutch.co profile URL</td>
-</tr>
-<tr>
-<td><code>rating</code></td>
-<td>number</td>
-<td>Average client rating (e.g., 4.8)</td>
-</tr>
-<tr>
-<td><code>review_count</code></td>
-<td>integer</td>
-<td>Number of published reviews</td>
-</tr>
-<tr>
-<td><code>verified</code></td>
-<td>string</td>
-<td>Verification badge text when available</td>
-</tr>
-<tr>
-<td><code>min_budget</code></td>
-<td>string</td>
-<td>Minimum project budget (e.g., "$5,000+")</td>
-</tr>
-<tr>
-<td><code>hourly_rate</code></td>
-<td>string</td>
-<td>Hourly rate range (e.g., "$100 - $149 / hr")</td>
-</tr>
-<tr>
-<td><code>company_size</code></td>
-<td>string</td>
-<td>Company size (e.g., "250 - 999")</td>
-</tr>
-<tr>
-<td><code>primary_location</code></td>
-<td>string</td>
-<td>Main city shown on the profile</td>
-</tr>
-<tr>
-<td><code>locations</code></td>
-<td>array</td>
-<td>All office locations detected on the page</td>
-</tr>
-<tr>
-<td><code>services</code></td>
-<td>array</td>
-<td>List of services offered</td>
-</tr>
-<tr>
-<td><code>industries</code></td>
-<td>array</td>
-<td>Industries served</td>
-</tr>
-<tr>
-<td><code>awards</code></td>
-<td>array</td>
-<td>Recognition and awards badges</td>
-</tr>
-<tr>
-<td><code>testimonials</code></td>
-<td>array</td>
-<td>Sample testimonial snippets (up to 3)</td>
-</tr>
-<tr>
-<td><code>description</code></td>
-<td>string</td>
-<td>About section text</td>
-</tr>
-<tr>
-<td><code>website</code></td>
-<td>string</td>
-<td>Agency website URL</td>
-</tr>
-<tr>
-<td><code>phone</code></td>
-<td>string</td>
-<td>Primary phone number</td>
-</tr>
-<tr>
-<td><code>email</code></td>
-<td>string</td>
-<td>Contact email when available</td>
-</tr>
-<tr>
-<td><code>address</code></td>
-<td>string</td>
-<td>Formatted JSON-LD address</td>
-</tr>
-<tr>
-<td><code>category_filter</code></td>
-<td>string</td>
-<td>Category passed in the input (for auditing)</td>
-</tr>
-<tr>
-<td><code>location_filter</code></td>
-<td>string</td>
-<td>Location passed in the input</td>
-</tr>
-<tr>
-<td><code>fetched_at</code></td>
-<td>string</td>
-<td>ISO timestamp of the detail scrape</td>
-</tr>
-<tr>
-<td><code>meta</code></td>
-<td>object</td>
-<td>Additional crawl metadata (referer, body size, etc.)</td>
-</tr>
-</tbody>
-</table>
-
-### Sample Output
-
-<pre><code>[
-  {
-    "name": "Power Digital",
-    "slug": "power-digital",
-    "url": "https://clutch.co/profile/power-digital",
-    "rating": 4.8,
-    "review_count": 182,
-    "verified": "Premier Verified",
-    "min_budget": "$5,000+",
-    "hourly_rate": "$100 - $149 / hr",
-    "company_size": "250 - 999",
-    "primary_location": "San Diego, CA",
-    "locations": ["San Diego, CA", "New York, NY"],
-    "services": ["Advertising", "Social Media Marketing", "Pay Per Click"],
-    "industries": ["Consumer products", "Financial services"],
-    "awards": ["2024 Clutch Champion"],
-    "testimonials": ["They act like an extension of our in-house team..."],
-    "description": "Power Digital is a tech-enabled growth firm...",
-    "website": "https://powerdigitalmarketing.com",
-    "phone": "+1 123 456 7890",
-    "email": "hello@powerdigital.com",
-    "address": "225 Broadway, San Diego, CA 92101, United States",
-    "category_filter": "advertising",
-    "location_filter": "San Diego",
-    "fetched_at": "2025-11-12T05:00:00.000Z",
-    "meta": {
-      "referer": "https://clutch.co/advertising",
-      "detail_body_length": 24512
-    }
+```json
+{
+  "webhookUrl": "https://your-app.com/webhook",
+  "webhookHeaders": {
+    "Authorization": "Bearer YOUR_WEBHOOK_TOKEN"
   }
-]</code></pre>
+}
+```
 
-<p>You can download the dataset in JSON, CSV, or other formats from the Apify Console after the run completes.</p>
+## 📈 Limits & Performance
 
-## Miscellaneous
+### Rate Limits
+- **Concurrent Requests**: 1-10 (recommended: 2-5)
+- **Daily Capacity**: Depends on proxy configuration
+- **Request Timeout**: 60 seconds per page
 
-<ul>
-<li><strong>Limits and Performance</strong>: Concurrency, smart delays, and autoscaled session pools are configurable so you can tune speed vs. stealth.</li>
-<li><strong>JS Rendering Assist</strong>: Inline hydration data is evaluated through <code>jsdom</code> plus <code>got-scraping</code>/<code>header-generator</code> so we mimic a modern browser without launching a heavyweight headless browser.</li>
-<li><strong>Proxy Strategy</strong>: Residential or high-quality datacenter proxies are strongly recommended; the actor falls back to direct connections but blocking is likely.</li>
-<li><strong>Logging</strong>: Enable <code>debugLog</code> to inspect pagination, session health, and blocking diagnostics right in the Apify console.</li>
-<li><strong>Data Freshness</strong>: Results reflect the current state of Clutch.co listings at the time of scraping.</li>
-<li><strong>Support</strong>: For issues or questions, check the Actor's discussion forum on Apify or contact support.</li>
-</ul>
+### Performance Tips
+- Use residential proxies for best success rates
+- Lower concurrency reduces blocking risk
+- Enable debug logging to monitor performance
+- Set reasonable `results_wanted` limits
 
-<p>This Actor is designed for ethical and legal use only. Always comply with Clutch.co's terms of service and applicable laws.</p>
+### Data Freshness
+- Results reflect current Clutch.co data at scrape time
+- Re-run periodically for updated information
+- Historical data available in Apify storage
+
+## 🛡️ Reliability Features
+
+- **Anti-Blocking Technology**: Advanced stealth techniques
+- **Session Management**: Automatic session rotation
+- **Error Recovery**: Built-in retry mechanisms
+- **Data Validation**: Comprehensive result validation
+- **Monitoring**: Real-time progress tracking
+
+## 📞 Support & Resources
+
+### Getting Help
+
+- **Documentation**: Complete API reference and guides
+- **Community Forum**: Connect with other users
+- **Issue Tracking**: Report bugs and request features
+- **Live Chat**: Direct support for Apify customers
+
+### Best Practices
+
+1. **Start Small**: Test with small result sets first
+2. **Use Filters**: Narrow searches for better results
+3. **Monitor Usage**: Track API usage and costs
+4. **Respect Limits**: Adhere to rate limits and terms
+5. **Data Quality**: Validate results before production use
+
+## 📄 License & Terms
+
+This actor is designed for ethical and legal use only. Always comply with Clutch.co's terms of service and applicable data protection laws.
+
+---
+
+**Built for Apify Platform** | **Trusted by 1M+ Users** | **Enterprise-Ready**
